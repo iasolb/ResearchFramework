@@ -32,6 +32,9 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
-
 # pytest
 .pytest_cache/
+
+# new transforms
+simulation.py
+src/

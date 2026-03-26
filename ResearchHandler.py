@@ -1,30 +1,50 @@
 import pandas as pd
 import numpy as np
-from typing import Optional, Callable
+import geopandas as gpd
+from typing import Optional, Callable, Any
 
 
 class ResearchHandler:
-    def __init__(self, filepath: str, handling_function: Callable):
+    def __init__(
+        self,
+        source: str | pd.DataFrame | gpd.GeoDataFrame,
+        handler: Optional[Callable] = None,
+        *,
+        shapefile: bool = False,
+    ):
         """
-        INPUT FILE MUST BE CSV
+        Args:
+            source: filepath (CSV or shapefile), DataFrame, or GeoDataFrame
+            handler: optional transform applied after loading
+            shapefile: if True, read source path as a shapefile
 
-            Example Usage:
-
-                def clean(df):
-                    df.columns = df.columns.str.lower()
-                    return df.dropna()
-                handler = ResearchHandler("data.csv", clean)
+        Examples:
+            ResearchHandler("data.csv")
+            ResearchHandler("data.csv", lambda df: df.dropna())
+            ResearchHandler("regions.shp", shapefile=True)
+            ResearchHandler(existing_df)
         """
-        try:
-            raw = pd.read_csv(filepath)
-            self.data = handling_function(raw)
-        except Exception as e:
-            print(e)
-            self.data = None
+        self.data = self._load(source, handler, shapefile)
         self.subset = None
         self.dependent = None
         self.independents = []
         self.controls = []
+
+    @staticmethod
+    def _load(
+        source: str | pd.DataFrame | gpd.GeoDataFrame,
+        handler: Optional[Callable],
+        shapefile: bool,
+    ) -> pd.DataFrame | gpd.GeoDataFrame:
+        if isinstance(source, (pd.DataFrame, gpd.GeoDataFrame)):
+            raw = source
+        elif isinstance(source, str):
+            raw = gpd.read_file(source) if shapefile else pd.read_csv(source)
+        else:
+            raise TypeError(
+                f"source must be a filepath, DataFrame, or GeoDataFrame — got {type(source).__name__}"
+            )
+        return handler(raw) if handler else raw
 
     def create_subset(self, condition: Callable) -> None:
         """
@@ -136,6 +156,7 @@ class ResearchHandler:
         full: bool = True,
     ) -> None:
         """
+        Pulls 1 column and attaches based on a normalizing Callable
         Example Usage:
 
             handler.normalize_and_attach("income", np.log, "log_income")
@@ -154,7 +175,7 @@ class ResearchHandler:
             f"Created {new_colname} from {source_col} using function: {normalizing_function.__name__} and attached to dataset"
         )
 
-    def apply_and_attach(
+    def calculate_and_attach(
         self,
         source_cols: list[str],
         func: Callable,
@@ -162,10 +183,11 @@ class ResearchHandler:
         full: bool = True,
     ) -> None:
         """
-        Example Usage:
+        Pulls 2 or more columns for calculation, and attaches to dataset
 
-            handler.apply_and_attach(["price", "quantity"], lambda df: df["price"] * df["quantity"], "revenue")
-            handler.apply_and_attach(["math", "reading"], lambda df: df.mean(axis=1), "avg_score", full=False)
+
+            handler.calculate_and_attach(["price", "quantity"], lambda df: df["price"] * df["quantity"], "revenue")
+            handler.calculate_and_attach(["math", "reading"], lambda df: df.mean(axis=1), "avg_score", full=False)
         little weird
         """
         if full and self.data is not None:
