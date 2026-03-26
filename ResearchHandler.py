@@ -2,6 +2,56 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 from typing import Optional, Callable, Any
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    """
+    Frozen snapshot of a ResearchHandler's variable specification.
+    Produced by rh.get_spec(). Can be passed to Simulation.from_spec()
+    to build a data-driven Monte Carlo simulation.
+
+    Attributes:
+        X:             design matrix (independents + controls)
+        y:             dependent variable (None if not set)
+        independents:  tuple of independent variable column names
+        controls:      tuple of control variable column names
+        dependent:     dependent variable column name (None if not set)
+        source_label:  "full" or "subset" — which dataset the variables came from
+        n:             number of observations
+        data:          copy of the source DataFrame (for distribution fitting)
+    """
+
+    X: pd.DataFrame
+    y: Optional[pd.Series]
+    independents: tuple
+    controls: tuple
+    dependent: Optional[str]
+    source_label: str
+    n: int
+    data: pd.DataFrame
+
+    @property
+    def columns(self) -> tuple:
+        """All variable column names (independents + controls)."""
+        return self.independents + self.controls
+
+    @property
+    def all_columns(self) -> tuple:
+        """All column names including dependent (if set)."""
+        if self.dependent is not None:
+            return (self.dependent,) + self.independents + self.controls
+        return self.independents + self.controls
+
+    def __repr__(self) -> str:
+        dep = self.dependent or "None"
+        return (
+            f"ModelSpec(n={self.n}, source={self.source_label}, "
+            f"dependent={dep}, "
+            f"independents={list(self.independents)}, "
+            f"controls={list(self.controls)})"
+        )
 
 
 class ResearchHandler:
@@ -29,6 +79,9 @@ class ResearchHandler:
         self.dependent = None
         self.independents = []
         self.controls = []
+        self._source_mode: Optional[str] = (
+            None  # "full" or "subset", locked on first variable call
+        )
 
     @staticmethod
     def _load(
@@ -60,6 +113,21 @@ class ResearchHandler:
             return
         print(f"Subset created with {len(self.subset)} rows")
 
+    def _enforce_source_mode(self, full: bool) -> None:
+        """
+        Lock the source mode on the first variable-setting call.
+        Raises ValueError if a subsequent call uses a different mode.
+        """
+        mode = "full" if full else "subset"
+        if self._source_mode is None:
+            self._source_mode = mode
+        elif self._source_mode != mode:
+            raise ValueError(
+                f"Source mode conflict: variables are being set from '{self._source_mode}' "
+                f"but this call uses '{'full' if full else 'subset'}'. "
+                f"Call clear_caches() before switching between full and subset."
+            )
+
     def set_dependent(self, col: str, full: bool = True) -> None:
         """
         Example Usage:
@@ -67,6 +135,7 @@ class ResearchHandler:
             handler.set_dependent("income")
             handler.set_dependent("income", full=False)
         """
+        self._enforce_source_mode(full)
         if full and self.data is not None:
             self.dependent = self.data[col]
         elif not full and self.subset is not None:
@@ -83,6 +152,7 @@ class ResearchHandler:
             handler.add_independents("age", "education", "experience")
             handler.add_independents("age", "education", full=False)
         """
+        self._enforce_source_mode(full)
         if full and self.data is not None:
             df = self.data
         elif not full and self.subset is not None:
@@ -101,6 +171,7 @@ class ResearchHandler:
             handler.add_controls("gender", "region")
             handler.add_controls("gender", "region", full=False)
         """
+        self._enforce_source_mode(full)
         if full and self.data is not None:
             df = self.data
         elif not full and self.subset is not None:
@@ -201,6 +272,50 @@ class ResearchHandler:
             return
         print(f"Created {new_colname} from {source_cols} and attached to dataset")
 
+    def get_spec(self) -> ModelSpec:
+        """
+        Return a frozen snapshot of the current variable specification.
+
+        The ModelSpec contains copies of the design matrix, dependent variable,
+        column name metadata, and the source DataFrame (for distribution fitting
+        in the simulation module).
+
+        Raises:
+            RuntimeError: if no independents have been set
+
+        Example:
+            rh.set_dependent("log_income")
+            rh.add_independents("education", "experience")
+            rh.add_controls("female")
+
+            spec = rh.get_spec()
+            spec.X              # DataFrame
+            spec.y              # Series
+            spec.independents   # ("education", "experience")
+            spec.controls       # ("female",)
+        """
+        X = self.get_X()
+        if X is None:
+            raise RuntimeError("Cannot build ModelSpec: no independent variables set.")
+        y = self.get_y()
+
+        # determine source dataframe
+        if self._source_mode == "subset":
+            source_df = self.subset
+        else:
+            source_df = self.data
+
+        return ModelSpec(
+            X=X.copy(),
+            y=y.copy() if y is not None else None,
+            independents=tuple(s.name for s in self.independents),
+            controls=tuple(s.name for s in self.controls),
+            dependent=self.dependent.name if self.dependent is not None else None,
+            source_label=self._source_mode or "full",
+            n=len(X),
+            data=source_df.copy(),
+        )
+
     def reset_subset(self) -> None:
         self.subset = None
         print("Subset cleared")
@@ -209,4 +324,5 @@ class ResearchHandler:
         self.dependent = None
         self.independents = []
         self.controls = []
+        self._source_mode = None
         print("Caches cleared")

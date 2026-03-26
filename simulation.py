@@ -16,7 +16,11 @@ import matplotlib.pyplot as plt
 # 1. INPUT SPECIFICATION
 # ---------------------------------------------------------------------------
 
-# Distribution Calculation Lookup table, maps dist_type strings to (numpy_rng_method, param_keys, scipy_dist).
+# Maps dist_type strings to (numpy_rng_method, param_keys, scipy_dist).
+# - numpy_rng_method: name of the method on np.random.Generator for direct draws
+# - param_keys: expected keys in DistributionSpec.params (for validation/docs)
+# - scipy_dist: corresponding scipy.stats distribution (used for ppf in
+#   correlated draws and for fit_from_data)
 
 _DISTRIBUTION_REGISTRY: dict[str, dict] = {
     "normal": {
@@ -1546,3 +1550,132 @@ class Simulation:
             "current_n": len(values),
             "relative_se": relative_se,
         }
+
+    @classmethod
+    def from_spec(
+        cls,
+        spec,
+        model: Optional[Callable] = None,
+        *,
+        dist_type: str = "normal",
+        overrides: Optional[dict[str, dict]] = None,
+        include_dependent: bool = False,
+        n_iterations: int = 10_000,
+        seed: Optional[int] = None,
+        vectorized: bool = False,
+    ) -> "Simulation":
+        """
+        Build a Simulation from a ResearchHandler ModelSpec.
+
+        Fits distributions from the spec's observed data, infers the
+        correlation matrix, and returns a ready-to-run Simulation.
+
+        Two modes:
+            1. model provided, include_dependent=False (default):
+               Fits distributions on independents + controls.
+               The model function produces outcomes from simulated inputs.
+
+            2. model=None, include_dependent=True:
+               Fits distributions on all variables including dependent.
+               Returns correlated draws from the joint distribution.
+               No model function is applied.
+
+        Args:
+            spec:               ModelSpec from ResearchHandler.get_spec()
+            model:              model function (row-wise or vectorized).
+                                Required when include_dependent=False.
+                                Must be None when include_dependent=True.
+            dist_type:          default distribution family to fit for all
+                                columns ("normal", "lognormal", "empirical", etc.)
+            overrides:          per-column overrides for dist_type, e.g.
+                                {"income": {"dist_type": "lognormal"},
+                                 "score": {"dist_type": "empirical"}}
+            include_dependent:  if True, fit a distribution for the dependent
+                                variable too (requires model=None)
+            n_iterations:       number of Monte Carlo draws
+            seed:               random seed for reproducibility
+            vectorized:         whether the model function is vectorized
+
+        Returns:
+            Simulation object, ready to call .run()
+
+        Examples:
+            # Standard: simulate inputs, model produces outcomes
+            sim = Simulation.from_spec(spec, model=my_model, seed=42)
+
+            # Override fit family for specific columns
+            sim = Simulation.from_spec(
+                spec,
+                model=my_model,
+                overrides={"income": {"dist_type": "lognormal"}},
+            )
+
+            # Joint distribution draw (no model)
+            sim = Simulation.from_spec(
+                spec, include_dependent=True, dist_type="empirical"
+            )
+        """
+        # --- Validate mode ---
+        if include_dependent and model is not None:
+            raise ValueError(
+                "Cannot use both include_dependent=True and a model function. "
+                "When include_dependent=True, no model is applied — the "
+                "simulation draws from the joint distribution of all variables. "
+                "Either set model=None or include_dependent=False."
+            )
+        if not include_dependent and model is None:
+            raise ValueError(
+                "A model function is required when include_dependent=False. "
+                "Either provide a model or set include_dependent=True to "
+                "draw from the joint distribution without a model."
+            )
+        if include_dependent and spec.dependent is None:
+            raise ValueError(
+                "include_dependent=True but the ModelSpec has no dependent "
+                "variable. Set a dependent variable before calling get_spec()."
+            )
+
+        overrides = overrides or {}
+
+        # --- Determine which columns to fit ---
+        columns_to_fit = list(spec.independents) + list(spec.controls)
+        if include_dependent:
+            columns_to_fit = [spec.dependent] + columns_to_fit
+
+        # --- Build InputManager ---
+        mgr = InputManager()
+        for col in columns_to_fit:
+            col_dist = overrides.get(col, {}).get("dist_type", dist_type)
+            mgr.fit_from_data(spec.data, [col], dist_type=col_dist)
+
+        # --- Infer correlation from the observed data ---
+        if len(columns_to_fit) > 1:
+            mgr.infer_correlation_from_data(spec.data)
+
+        # --- Build the Simulation ---
+        if include_dependent:
+            # Joint distribution mode: no model, just return draws.
+            # Use an identity model that returns all columns as a DataFrame.
+            identity = ModelFunction(lambda df: df, vectorized=True)
+            instance = cls.__new__(cls)
+            instance.input_manager = mgr
+            instance.model_fn = identity
+            instance.n_iterations = n_iterations
+            instance.seed = seed
+            instance.engine = MonteCarloEngine(mgr, identity, n_iterations, seed)
+            instance.sensitivity = SensitivityAnalyzer(instance.engine)
+            instance.convergence = ConvergenceDiagnostics
+            instance.plot = SimulationPlotter()
+        else:
+            model_fn = ModelFunction(model, vectorized=vectorized)
+            instance = cls.__new__(cls)
+            instance.input_manager = mgr
+            instance.model_fn = model_fn
+            instance.n_iterations = n_iterations
+            instance.seed = seed
+            instance.engine = MonteCarloEngine(mgr, model_fn, n_iterations, seed)
+            instance.sensitivity = SensitivityAnalyzer(instance.engine)
+            instance.convergence = ConvergenceDiagnostics
+            instance.plot = SimulationPlotter()
+
+        return instance
