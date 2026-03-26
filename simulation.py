@@ -16,11 +16,7 @@ import matplotlib.pyplot as plt
 # 1. INPUT SPECIFICATION
 # ---------------------------------------------------------------------------
 
-# Maps dist_type strings to (numpy_rng_method, param_keys, scipy_dist).
-# - numpy_rng_method: name of the method on np.random.Generator for direct draws
-# - param_keys: expected keys in DistributionSpec.params (for validation/docs)
-# - scipy_dist: corresponding scipy.stats distribution (used for ppf in
-#   correlated draws and for fit_from_data)
+# Distribution Calculation Lookup table, maps dist_type strings to (numpy_rng_method, param_keys, scipy_dist).
 
 _DISTRIBUTION_REGISTRY: dict[str, dict] = {
     "normal": {
