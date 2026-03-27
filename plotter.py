@@ -32,7 +32,7 @@ Usage:
 import numpy as np
 import pandas as pd
 from typing import Optional
-
+from simulation import ConvergenceDiagnostics
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.stats import gaussian_kde
@@ -231,7 +231,6 @@ class SimulationPlotter:
         **kwargs,
     ) -> go.Figure:
         """Running mean with ±1 SE band."""
-        from simulation import ConvergenceDiagnostics
 
         if isinstance(outcomes, pd.DataFrame):
             outcomes = outcomes.iloc[:, 0].values
