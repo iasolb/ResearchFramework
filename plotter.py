@@ -97,7 +97,7 @@ class SimulationPlotter:
     def _extract(result) -> np.ndarray:
         """Pull a 1-D array from outcomes (handles multi-output)."""
         if isinstance(result.outcomes, pd.DataFrame):
-            return result.outcomes.iloc[:, 0].values
+            return pd.DataFrame(np.array(result.outcomes.iloc[:, 0])).values
         return np.asarray(result.outcomes)
 
     # ── Histogram ─────────────────────────────────────────────────
@@ -233,12 +233,12 @@ class SimulationPlotter:
         """Running mean with ±1 SE band."""
 
         if isinstance(outcomes, pd.DataFrame):
-            outcomes = outcomes.iloc[:, 0].values
+            outcomes = pd.DataFrame(np.array(outcomes.iloc[:, 0])).values
 
         running = ConvergenceDiagnostics.running_statistics(outcomes)
-        iters = running["iteration"].values
-        means = running["cumulative_mean"].values
-        stds = running["cumulative_std"].values
+        iters = np.array(running["iteration"].values)
+        means = np.array(running["cumulative_mean"].values)
+        stds = np.array(running["cumulative_std"].values)
         se = stds / np.sqrt(iters)
 
         fig = go.Figure()
@@ -303,7 +303,8 @@ class SimulationPlotter:
 
         df = tornado_data.sort_values("swing", ascending=True)
         overall_baseline = (
-            (df["low_outcome"].values + df["high_outcome"].values) / 2
+            (np.array(df["low_outcome"].values) + np.array(df["high_outcome"].values))
+            / 2
         ).mean()
 
         fig = go.Figure()

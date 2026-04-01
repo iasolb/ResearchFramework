@@ -1,9 +1,8 @@
 import pandas as pd
-import numpy as np
-import geopandas as gpd
 from typing import Optional, Callable, Any
 from pathlib import Path
 from dataclasses import dataclass
+import geopandas as gpd
 
 
 @dataclass(frozen=True)
@@ -86,7 +85,7 @@ def json_loader(filepath: Path):
 def pdf_loader(filepath: Path): ...
 
 
-LOADER_REG = {
+_LOADER_REG = {
     "csv": csv_loader,
     "shp": shapefile_loader,
     "txt": txt_loader,
@@ -128,13 +127,13 @@ class ResearchHandler:
 
     @staticmethod
     def _load(
-        source: Path | pd.DataFrame | gpd.GeoDataFrame,
+        source: Path | Any,
         handler: Optional[Callable],
         data_format: Optional[str] = None,
     ) -> pd.DataFrame | gpd.GeoDataFrame:
         if data_format and isinstance(source, Path):
             try:
-                loader = LOADER_REG[data_format]
+                loader = _LOADER_REG[data_format]
                 raw = loader(source)
                 if handler:
                     try:
@@ -375,10 +374,10 @@ class ResearchHandler:
             y=y.copy() if y is not None else None,
             independents=tuple(s.name for s in self.independents),
             controls=tuple(s.name for s in self.controls),
-            dependent=self.dependent.name if self.dependent is not None else None,
+            dependent=str(self.dependent.name if self.dependent is not None else None),
             source_label=self._source_mode or "full",
             n=len(X),
-            data=source_df.copy(),
+            data=pd.DataFrame(source_df).copy(),
         )
 
     def reset_subset(self) -> None:

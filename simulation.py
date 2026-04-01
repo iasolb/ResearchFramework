@@ -228,7 +228,7 @@ class InputManager:
                 spec = DistributionSpec(
                     name=col,
                     dist_type="empirical",
-                    empirical_data=values,
+                    empirical_data=np.array(values),
                 )
             else:
                 if dist_type not in _DISTRIBUTION_REGISTRY:
@@ -313,7 +313,10 @@ class InputManager:
             spec = self.specs[name]
 
             if spec.dist_type == "empirical":
-                columns[name] = rng.choice(spec.empirical_data, size=n, replace=True)
+                if spec.empirical_data:
+                    columns[name] = rng.choice(
+                        spec.empirical_data, size=n, replace=True
+                    )
             else:
                 draw_fn = _DISTRIBUTION_REGISTRY[spec.dist_type]["draw"]
                 columns[name] = draw_fn(rng, n, spec.params)
@@ -336,11 +339,16 @@ class InputManager:
         z = rng.standard_normal(size=(n, k))
 
         # step 2: cholesky and correlate
-        L = np.linalg.cholesky(self.correlation_matrix)
+        if self.correlation_matrix:
+            L = np.linalg.cholesky(self.correlation_matrix)
+        else:
+            L = None
+        assert L, "Cholesky Failed"
         correlated_z = z @ L.T  # (n x k)
 
         # step 3: transform each column through Phi (standard normal CDF)
         #         to get uniform(0,1) quantiles, then through target ppf
+
         u = stats.norm.cdf(correlated_z)  # (n x k) in [0, 1]
 
         columns = {}
@@ -348,7 +356,7 @@ class InputManager:
             spec = self.specs[name]
 
             if spec.dist_type == "empirical":
-                # for empirical: use quantiles to index into sorted data
+                assert spec.empirical_data, "Missing Empirical Data."
                 sorted_data = np.sort(spec.empirical_data)
                 indices = np.clip(
                     (u[:, i] * len(sorted_data)).astype(int),
@@ -511,10 +519,9 @@ class SimulationResult:
         # handle multi-output case: summarize the first column only,
         # but store the full outcomes for manual inspection
         if isinstance(self.outcomes, pd.DataFrame):
-            values = self.outcomes.iloc[:, 0].values
+            values = np.array(self.outcomes.iloc[:, 0].values)
         else:
-            values = self.outcomes
-
+            values = np.array(self.outcomes)
         self.mean = float(np.mean(values))
         self.median = float(np.median(values))
         self.std = float(np.std(values, ddof=1))
@@ -556,7 +563,7 @@ class SimulationResult:
         if isinstance(self.outcomes, pd.DataFrame):
             # multi-output: append each outcome column
             for col in self.outcomes.columns:
-                df[col] = self.outcomes[col].values
+                df[col] = pd.DataFrame(self.outcomes[col]).values
         else:
             df["outcome"] = self.outcomes
 
@@ -616,7 +623,7 @@ class MonteCarloEngine:
             SimulationResult with outcomes and optionally draws
         """
         draws = self.inputs.draw(self.n_iterations, seed=self.seed)
-        outcomes = self.model.run(draws)
+        outcomes = np.array(self.model.run(draws))
 
         return SimulationResult(
             outcomes=outcomes,
@@ -705,7 +712,7 @@ class SensitivityAnalyzer:
         values = {}
         for name, spec in self.engine.inputs.specs.items():
             if spec.dist_type == "empirical":
-                values[name] = float(np.median(spec.empirical_data))
+                values[name] = float(np.median(np.array(spec.empirical_data)))
             elif spec.dist_type == "normal":
                 values[name] = spec.params["mean"]
             elif spec.dist_type == "lognormal":
@@ -736,8 +743,8 @@ class SensitivityAnalyzer:
         """
         if spec.dist_type == "empirical":
             return np.linspace(
-                np.percentile(spec.empirical_data, low_pct),
-                np.percentile(spec.empirical_data, high_pct),
+                np.percentile(np.array(spec.empirical_data), low_pct),
+                np.percentile(np.array(spec.empirical_data), high_pct),
                 n_steps,
             )
 
@@ -870,9 +877,9 @@ class SensitivityAnalyzer:
         f_A = self.engine.model.run(A)
         f_B = self.engine.model.run(B)
         if isinstance(f_A, pd.DataFrame):
-            f_A = f_A.iloc[:, 0].values
+            f_A = np.array(f_A.iloc[:, 0].values)
         if isinstance(f_B, pd.DataFrame):
-            f_B = f_B.iloc[:, 0].values
+            f_B = np.array(f_B.iloc[:, 0].values)
 
         # for each variable i, build AB_i: A with column i replaced by B's column i
         S1_values = []
@@ -1077,7 +1084,7 @@ class ConvergenceDiagnostics:
             DataFrame with columns (iteration, cumulative_mean, cumulative_std)
         """
         if isinstance(outcomes, pd.DataFrame):
-            outcomes = outcomes.iloc[:, 0].values
+            outcomes = pd.DataFrame(np.array(outcomes.iloc[:, 0])).values
 
         n = len(outcomes)
         cum_sum = np.cumsum(outcomes)
@@ -1124,7 +1131,7 @@ class ConvergenceDiagnostics:
             True if converged
         """
         if isinstance(outcomes, pd.DataFrame):
-            outcomes = outcomes.iloc[:, 0].values
+            outcomes = pd.DataFrame(np.array(outcomes.iloc[:, 0])).values
 
         if len(outcomes) < window * 2:
             return False
@@ -1135,7 +1142,7 @@ class ConvergenceDiagnostics:
 
         trailing_mean = np.mean(outcomes[-window:])
         relative_diff = abs(trailing_mean - overall_mean) / abs(overall_mean)
-        return relative_diff < tolerance
+        return bool(relative_diff < tolerance)
 
     @staticmethod
     def suggest_n(
@@ -1161,7 +1168,7 @@ class ConvergenceDiagnostics:
             suggested total N (not additional — total)
         """
         if isinstance(outcomes, pd.DataFrame):
-            outcomes = outcomes.iloc[:, 0].values
+            outcomes = pd.DataFrame(np.array(outcomes.iloc[:, 0])).values
 
         mean = np.mean(outcomes)
         std = np.std(outcomes, ddof=1)
@@ -1288,7 +1295,7 @@ class Simulation:
         """
         values = result.outcomes
         if isinstance(values, pd.DataFrame):
-            values = values.iloc[:, 0].values
+            values = np.array(values.iloc[:, 0].values)
 
         is_conv = ConvergenceDiagnostics.is_converged(values)
         suggested = ConvergenceDiagnostics.suggest_n(values)
