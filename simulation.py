@@ -1426,6 +1426,7 @@ class Simulation:
             instance.sensitivity = SensitivityAnalyzer(instance.engine)
             instance.convergence = ConvergenceDiagnostics
         else:
+            assert model, "No Model Passed."
             model_fn = ModelFunction(model, vectorized=vectorized)
             instance = cls.__new__(cls)
             instance.input_manager = mgr

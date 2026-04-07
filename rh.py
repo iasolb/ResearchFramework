@@ -5,6 +5,8 @@ from typing import Optional, Callable, Any
 from pathlib import Path
 from dataclasses import dataclass
 import geopandas as gpd
+from functools import reduce
+import pickle
 
 
 @dataclass(frozen=True)
@@ -59,35 +61,80 @@ class ModelSpec:
 # === Loader Functions Utils
 
 
-def csv_loader(filepath: Path):
+def csv_loader(filepath: Path) -> pd.DataFrame:
     return pd.read_csv(filepath)
 
 
-def shapefile_loader(filepath: Path):
+def pickle_loader(filepath: Path | str) -> pd.DataFrame:
+    """
+    Load a dict-of-DataFrames pickle and flatten it into a single
+    DataFrame by outer-merging on columns shared across all frames.
+
+    Parameters
+    ----------
+    filepath : Path or str
+        Path to the .pkl file.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per shared-key combination, with all frames' columns merged in.
+    """
+    with open(filepath, "rb") as f:
+        data = pickle.load(f)
+    if isinstance(data, pd.DataFrame):
+        return data
+    if not isinstance(data, dict) or len(data) == 0:
+        return pd.DataFrame()
+    frames = list(data.values())
+    if len(frames) == 1:
+        return frames[0]
+    shared = set(frames[0].columns)
+    for df in frames[1:]:
+        shared &= set(df.columns)
+    merge_keys = []
+    for col in shared:
+        if all(not pd.api.types.is_numeric_dtype(df[col]) for df in frames):
+            merge_keys.append(col)
+    if not merge_keys:
+        parts = []
+        for name, df in data.items():
+            chunk = df.copy()
+            chunk.insert(0, "series", name)
+            parts.append(chunk)
+        return pd.concat(parts, ignore_index=True)
+    merged = reduce(
+        lambda left, right: pd.merge(left, right, on=merge_keys, how="outer"),
+        frames,
+    )
+    return merged
+
+
+def shapefile_loader(filepath: Path) -> pd.DataFrame:
     return gpd.read_file(filepath)
 
 
-def txt_loader(filepath: Path):
+def txt_loader(filepath: Path) -> pd.DataFrame:
     return pd.read_csv(filepath, sep="\t")
 
 
-def xml_loader(filepath: Path):
+def xml_loader(filepath: Path) -> pd.DataFrame:
     return pd.read_xml(filepath)
 
 
-def xlsx_loader(filepath: Path):
+def xlsx_loader(filepath: Path) -> pd.DataFrame:
     return pd.read_excel(filepath)
 
 
-def parquet_loader(filepath: Path):
+def parquet_loader(filepath: Path) -> pd.DataFrame:
     return pd.read_parquet(filepath)
 
 
-def json_loader(filepath: Path):
+def json_loader(filepath: Path) -> pd.DataFrame:
     return pd.read_json(filepath)
 
 
-def pdf_loader(filepath: Path): ...
+def pdf_loader(filepath: Path) -> pd.DataFrame: ...
 
 
 _LOADER_REG = {
@@ -99,6 +146,7 @@ _LOADER_REG = {
     "parquet": parquet_loader,
     "json": json_loader,
     "pdf": pdf_loader,
+    "pkl": pickle_loader,
 }
 
 
