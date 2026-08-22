@@ -12,29 +12,27 @@ Scenario:
     rates, churn, and market multiples. We compare baseline, bull, and
     bear market scenarios.
 
-Run:   python examples/monte_carlo_portfolio.py
+Run:   python examples/monte_carlo_test.py
 Data:  examples/data/startup_portfolio.csv
 """
 
 import os
-import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from simulation import (
+from research_framework import (
+    ConvergenceDiagnostics,
     DistributionSpec,
     InputManager,
     ModelFunction,
     MonteCarloEngine,
-    SimulationResult,
     SensitivityAnalyzer,
-    Scenario,
-    ScenarioComparator,
-    ConvergenceDiagnostics,
-    SimulationPlotter,
     Simulation,
+    SimulationPlotter,
+    SimulationResult,
+    Scenario,
 )
+from research_framework.simulation import ScenarioComparator
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "startup_portfolio.csv")
 

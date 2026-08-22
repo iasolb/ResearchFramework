@@ -34,7 +34,3 @@ Thumbs.db
 *.swo
 # pytest
 .pytest_cache/
-
-# new transforms
-
-src/

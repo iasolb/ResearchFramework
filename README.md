@@ -38,13 +38,17 @@ pip install -r requirements.txt
 
 ```
 ResearchFramework/
-├── ResearchHandler.py     # Core data handling class + ModelSpec
-├── transforms.py          # Reusable single- and multi-column transforms
-├── simulation.py          # Monte Carlo simulation module
+├── pyproject.toml         # Package metadata (pip install .)
 ├── requirements.txt       # Dependencies (core + optional)
 ├── LICENSE                # MIT
 ├── .gitignore
 ├── README.md
+├── src/research_framework/
+│   ├── __init__.py        # public API re-exports
+│   ├── rh.py              # Core data handling class + ModelSpec
+│   ├── transforms.py      # Reusable single- and multi-column transforms
+│   ├── simulation.py      # Monte Carlo simulation module
+│   └── plotter.py         # Plotly plotting for simulation results
 ├── tests/
 │   └── test_handler.py    # pytest suite with synthetic data
 └── examples/
@@ -60,8 +64,8 @@ ResearchFramework/
 
 ```python
 import numpy as np
-from ResearchHandler import ResearchHandler
-from transforms import mean_center, log_transform, z_score
+from research_framework import ResearchHandler
+from research_framework import mean_center, log_transform, z_score
 
 def clean(df):
     df.columns = df.columns.str.lower().str.strip()
@@ -197,7 +201,7 @@ spec.data           # copy of the source DataFrame (for distribution fitting)
 Attaches a precomputed Series to the full dataset or subset.
 
 ```python
-from transforms import square
+from research_framework import square
 
 rh.attach("age_sq", square(rh.data["age"]))
 rh.attach("age_sq", square(rh.subset["age"]), to_full=False)
@@ -208,7 +212,7 @@ rh.attach("age_sq", square(rh.subset["age"]), to_full=False)
 Applies a single-column transformation and attaches the result.
 
 ```python
-from transforms import log_transform, z_score, mean_center, min_max_scale
+from research_framework import log_transform, z_score, mean_center, min_max_scale
 
 rh.normalize_and_attach("income", log_transform, "log_income")
 rh.normalize_and_attach("gpa", z_score, "gpa_z")
@@ -222,7 +226,7 @@ rh.normalize_and_attach("wage", log_transform, "log_wage", full=False)
 Applies a multi-column transformation and attaches the result. The function receives a DataFrame subset of the specified columns.
 
 ```python
-from transforms import interaction, row_mean, row_sum, safe_ratio
+from research_framework import interaction, row_mean, row_sum, safe_ratio
 
 rh.calculate_and_attach(["education", "experience"], interaction, "edu_x_exp")
 rh.calculate_and_attach(["math", "reading", "science"], row_mean, "avg_score")
@@ -288,7 +292,7 @@ For use with `calculate_and_attach`:
 ### Simulation Quick Start
 
 ```python
-from simulation import Simulation, DistributionSpec
+from research_framework import Simulation, DistributionSpec
 
 sim = Simulation(
     variables=[
@@ -310,8 +314,8 @@ print(f"95% CI: [${result.ci_lower:,.0f}, ${result.ci_upper:,.0f}]")
 The primary integration path is `get_spec()` + `Simulation.from_spec()`. This fits distributions from your observed data, infers the correlation structure, and returns a ready-to-run simulation — no manual `InputManager` wiring needed.
 
 ```python
-from ResearchHandler import ResearchHandler
-from simulation import Simulation
+from research_framework import ResearchHandler
+from research_framework import Simulation
 
 rh = ResearchHandler("labor_data.csv", clean)
 rh.normalize_and_attach("income", log_transform, "log_income")
@@ -357,7 +361,7 @@ Note: `include_dependent=True` requires `model=None` — the two modes are mutua
 For lower-level control you can still use `InputManager` directly:
 
 ```python
-from simulation import InputManager, DistributionSpec, ModelFunction, MonteCarloEngine
+from research_framework import InputManager, DistributionSpec, ModelFunction, MonteCarloEngine
 
 mgr = InputManager()
 mgr.fit_from_data(rh.data, ["growth_rate", "churn_rate"], dist_type="normal")
@@ -547,7 +551,7 @@ sobol = sim.sensitivity.sobol_indices(n_samples=5_000, seed=99)
 Define named scenarios with distribution parameter overrides, then compare outcomes against baseline:
 
 ```python
-from simulation import Scenario
+from research_framework import Scenario
 
 scenarios = [
     Scenario("bull_market", overrides={
@@ -622,7 +626,7 @@ All examples in `examples/` generate their own synthetic data so you can clone a
 python examples/ols_mincer.py
 python examples/random_forest_churn.py
 python examples/heckman_selection.py
-python examples/monte_carlo_portfolio.py
+python examples/monte_carlo_test.py
 ```
 
 ### OLS Regression with statsmodels
@@ -632,8 +636,7 @@ A standard Mincer wage equation with log wages, centered experience, and a squar
 ```python
 import numpy as np
 import statsmodels.api as sm
-from ResearchHandler import ResearchHandler
-from transforms import log_transform, mean_center, square
+from research_framework import ResearchHandler, log_transform, mean_center, square
 
 def clean(df):
     df.columns = df.columns.str.lower()
@@ -665,8 +668,7 @@ Predicting customer churn with engineered features and standardized inputs.
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
-from ResearchHandler import ResearchHandler
-from transforms import z_score, log1p_transform, safe_ratio
+from research_framework import ResearchHandler, z_score, log1p_transform, safe_ratio
 
 rh = ResearchHandler("customer_data.csv", clean)
 
@@ -694,8 +696,7 @@ Correct for selection bias in observed wages using the inverse Mills ratio.
 ```python
 import statsmodels.api as sm
 from scipy.stats import norm
-from ResearchHandler import ResearchHandler
-from transforms import mean_center, log_transform
+from research_framework import ResearchHandler, mean_center, log_transform
 
 rh = ResearchHandler("labor_survey.csv", clean)
 rh.normalize_and_attach("age", mean_center, "age_centered")
@@ -726,7 +727,7 @@ print(ols.summary())
 Simulate a VC portfolio's 3-year value under uncertainty about growth, churn, market multiples, and discount rates.
 
 ```python
-from simulation import Simulation, DistributionSpec, Scenario
+from research_framework import Simulation, DistributionSpec, Scenario
 
 def portfolio_value(row):
     base_arr = 33.0 * 12

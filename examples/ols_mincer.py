@@ -9,15 +9,12 @@ Requires: pip install statsmodels
 """
 
 import os
-import sys
 import tempfile
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from ResearchHandler import ResearchHandler
-from transforms import mean_center, log_transform, square
+from research_framework import ResearchHandler, log_transform, mean_center, square
 
 
 # ---------------------------------------------------------------------------

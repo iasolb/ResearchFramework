@@ -4,19 +4,13 @@ Tests for ResearchHandler and transforms.
 Run with: pytest tests/test_handler.py -v
 """
 
-import os
 import tempfile
 import numpy as np
 import pandas as pd
 import pytest
 
-# Adjust import path — tests run from repo root
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from ResearchHandler import ResearchHandler
-from transforms import (
+from research_framework import ResearchHandler
+from research_framework.transforms import (
     mean_center,
     z_score,
     min_max_scale,

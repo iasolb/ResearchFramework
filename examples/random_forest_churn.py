@@ -9,7 +9,6 @@ Requires: pip install scikit-learn
 """
 
 import os
-import sys
 import tempfile
 import numpy as np
 import pandas as pd
@@ -17,9 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from ResearchHandler import ResearchHandler
-from transforms import z_score, log1p_transform, safe_ratio
+from research_framework import ResearchHandler, log1p_transform, safe_ratio, z_score
 
 
 # ---------------------------------------------------------------------------

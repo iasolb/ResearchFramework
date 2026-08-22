@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "research-framework"
+version = "0.1.0"
+description = "A lightweight pandas-based framework for research workflows: dataset management with tracked model specifications, reusable column transforms, and a Monte Carlo simulation module for uncertainty analysis."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Ian Solberg" }]
+dependencies = [
+    "pandas>=1.5",
+    "numpy>=1.23",
+    "geopandas",
+    "scipy>=1.11",
+    "plotly>=5.18",
+    "kaleido>=0.2",
+    "statsmodels>=0.14",
+    "scikit-learn>=1.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
