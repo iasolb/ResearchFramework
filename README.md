@@ -79,7 +79,7 @@ spec = rh.get_spec()
 `simulation.py` provides a Monte Carlo simulation framework for running
 models under uncertainty. The primary integration path is `get_spec()` +
 `Simulation.from_spec()`: it fits distributions from your observed data,
-infers the correlation structure, and returns a ready-to-run simulation —
+infers the correlation structure, and returns a ready-to-run simulation,
 no manual wiring needed.
 
 ```python
@@ -137,7 +137,7 @@ pytest tests/test_handler.py::TestTransforms::test_z_score -v
 
 ## Start here
 
-Run one of the example workflows in `examples/` — `ols_mincer.py` is the
+Run one of the example workflows in `examples/`: `ols_mincer.py` is the
 shortest path to seeing the framework end to end.
 
 ---
@@ -261,8 +261,8 @@ metadata, and the source DataFrame. Nothing mutates after creation.
 ```python
 spec = rh.get_spec()
 
-spec.X              # DataFrame — same as get_X()
-spec.y              # Series — same as get_y()
+spec.X              # DataFrame: same as get_X()
+spec.y              # Series: same as get_y()
 spec.independents   # ("education", "experience")
 spec.controls       # ("female",)
 spec.dependent      # "log_income"
@@ -274,7 +274,7 @@ spec.data           # copy of the source DataFrame (for distribution fitting)
 ```
 
 `ModelSpec` is the bridge between `ResearchHandler` and the simulation
-module — pass it to `Simulation.from_spec()` to build a data-driven Monte
+module: pass it to `Simulation.from_spec()` to build a data-driven Monte
 Carlo simulation.
 
 ### `attach(col_name, series, to_full=True, quiet=False)`
@@ -368,7 +368,7 @@ For use with `calculate_and_attach`:
 ### `DistributionSpec(name, dist_type, params, empirical_data=None)`
 
 Defines an uncertain variable and its probability distribution. Validation
-happens on construction — missing params or unknown distribution types
+happens on construction: missing params or unknown distribution types
 raise immediately.
 
 | `dist_type` | Required `params` |
@@ -408,7 +408,7 @@ mgr.fit_from_data(df, ["col_c"], dist_type="empirical")
 mgr.set_correlation_matrix(np.array([[1.0, 0.6], [0.6, 1.0]]))
 mgr.infer_correlation_from_data(df)
 
-# Draw samples — returns DataFrame of shape (n, n_variables)
+# Draw samples: returns DataFrame of shape (n, n_variables)
 draws = mgr.draw(10_000, seed=42)
 ```
 
@@ -547,7 +547,7 @@ oat = sim.sensitivity.one_at_a_time("revenue", n_steps=20)
 
 # Sobol indices: variance-based global sensitivity
 sobol = sim.sensitivity.sobol_indices(n_samples=5_000, seed=99)
-# Returns DataFrame: variable, S1, S1_conf — sorted by S1 descending
+# Returns DataFrame: variable, S1, S1_conf, sorted by S1 descending
 ```
 
 ### Scenario Comparison
@@ -577,7 +577,7 @@ summary = sim.compare_scenarios_summary(scenarios)
 # Returns DataFrame: scenario, mean, median, std, ci_lower, ci_upper, min, max
 ```
 
-Only the parameters that differ need to be specified — everything else stays
+Only the parameters that differ need to be specified: everything else stays
 at the base case.
 
 ### Convergence Diagnostics
@@ -601,7 +601,7 @@ ConvergenceDiagnostics.suggest_n(result.outcomes, target_tolerance=0.005)
 
 # Snapshots at increasing N
 snapshots = sim.engine.run_convergence()
-# [SimulationResult(n=100), ..., SimulationResult(n=10000)] — all pre-summarized
+# [SimulationResult(n=100), ..., SimulationResult(n=10000)], all pre-summarized
 ```
 
 ### Plotting
@@ -784,7 +784,7 @@ can accept a `ModelSpec`, but does not import from `ResearchHandler.py`.
 
 **Distribution registry.** `_DISTRIBUTION_REGISTRY` maps string names to
 draw functions, scipy distributions, and parameter translation maps. Adding
-a new distribution is a single dictionary insertion — no other code changes
+a new distribution is a single dictionary insertion: no other code changes
 needed. Correlated draws use a Gaussian copula (Cholesky decomposition of
 the correlation matrix applied to standard normal draws, then transformed
 through each variable's inverse-CDF).
