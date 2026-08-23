@@ -1,6 +1,10 @@
 # Research Framework
 
-A lightweight pandas-based framework for research workflows. Manages datasets and working subsets, tracks dependent/independent/control variables, provides clean interfaces for transforming columns, and includes a full Monte Carlo simulation module for uncertainty analysis.
+A lightweight pandas-based framework for research workflows. It manages
+datasets and working subsets, tracks dependent/independent/control
+variables, provides clean interfaces for transforming columns, and includes
+a full Monte Carlo simulation module for uncertainty analysis. Installs as
+`research-framework`.
 
 ## Installation
 
@@ -32,32 +36,6 @@ Or install everything at once:
 
 ```bash
 pip install -r requirements.txt
-```
-
-## Repository Structure
-
-```
-ResearchFramework/
-├── pyproject.toml         # Package metadata (pip install .)
-├── requirements.txt       # Dependencies (core + optional)
-├── LICENSE                # MIT
-├── .gitignore
-├── README.md
-├── src/research_framework/
-│   ├── __init__.py        # public API re-exports
-│   ├── rh.py              # Core data handling class + ModelSpec
-│   ├── transforms.py      # Reusable single- and multi-column transforms
-│   ├── simulation.py      # Monte Carlo simulation module
-│   └── plotter.py         # Plotly plotting for simulation results
-├── tests/
-│   └── test_handler.py    # pytest suite with synthetic data
-└── examples/
-    ├── data/
-    │   └── startup_portfolio.csv      # Sample portfolio dataset
-    ├── ols_mincer.py                  # OLS Mincer wage equation
-    ├── random_forest_churn.py         # Random forest churn prediction
-    ├── heckman_selection.py           # Heckman two-step selection model
-    └── monte_carlo_portfolio.py       # Monte Carlo portfolio valuation
 ```
 
 ## Quick Start
@@ -96,11 +74,111 @@ y = rh.get_y()
 spec = rh.get_spec()
 ```
 
+## Simulation module
+
+`simulation.py` provides a Monte Carlo simulation framework for running
+models under uncertainty. The primary integration path is `get_spec()` +
+`Simulation.from_spec()`: it fits distributions from your observed data,
+infers the correlation structure, and returns a ready-to-run simulation,
+no manual wiring needed.
+
+```python
+from research_framework import ResearchHandler
+from research_framework import Simulation
+
+rh = ResearchHandler("labor_data.csv", clean)
+rh.normalize_and_attach("income", log_transform, "log_income")
+rh.set_dependent("log_income")
+rh.add_independents("education", "experience")
+rh.add_controls("female")
+
+spec = rh.get_spec()
+
+sim = Simulation.from_spec(
+    spec,
+    model=lambda row: 8.0 + 0.08 * row["education"] + 0.02 * row["experience"],
+    n_iterations=10_000,
+    seed=42,
+)
+result = sim.run()
+```
+
+The module also covers sensitivity analysis (tornado, one-at-a-time, Sobol
+indices), named scenario comparison, convergence diagnostics, and plotting.
+Full API below.
+
+## Example Workflows
+
+All examples in `examples/` generate their own synthetic data so you can
+clone and run immediately:
+
+```bash
+python examples/ols_mincer.py
+python examples/random_forest_churn.py
+python examples/heckman_selection.py
+python examples/monte_carlo_test.py
+```
+
+## Running Tests
+
+From the repo root:
+
+```bash
+pytest tests/test_handler.py -v
+```
+
+The test suite covers the full `ResearchHandler` class and every function in
+`transforms.py`, using synthetic data with no external dependencies.
+
+```bash
+pytest tests/test_handler.py::TestSubset -v
+pytest tests/test_handler.py::TestTransforms::test_z_score -v
+```
+
+## Start here
+
+Run one of the example workflows in `examples/`: `ols_mincer.py` is the
+shortest path to seeing the framework end to end.
+
+---
+
+# Reference
+
+The rest of this file is the full API reference and design notes.
+
+## Repository Structure
+
+```
+ResearchFramework/
+├── pyproject.toml         # Package metadata (pip install .)
+├── requirements.txt       # Dependencies (core + optional)
+├── LICENSE                # MIT
+├── .gitignore
+├── README.md
+├── src/research_framework/
+│   ├── __init__.py        # public API re-exports
+│   ├── rh.py              # Core data handling class + ModelSpec
+│   ├── transforms.py      # Reusable single- and multi-column transforms
+│   ├── simulation.py      # Monte Carlo simulation module
+│   └── plotter.py         # Plotly plotting for simulation results
+├── tests/
+│   └── test_handler.py    # pytest suite with synthetic data
+└── examples/
+    ├── data/
+    │   └── startup_portfolio.csv      # Sample portfolio dataset
+    ├── ols_mincer.py                  # OLS Mincer wage equation
+    ├── random_forest_churn.py         # Random forest churn prediction
+    ├── heckman_selection.py           # Heckman two-step selection model
+    └── monte_carlo_portfolio.py       # Monte Carlo portfolio valuation
+```
+
 ## ResearchHandler API
 
 ### `ResearchHandler(source, handler=None, *, shapefile=False)`
 
-Constructor. Accepts a CSV filepath, shapefile path, DataFrame, or GeoDataFrame. The optional `handler` function transforms the data after loading.
+Constructor. Accepts a CSV filepath, shapefile path, DataFrame, or
+GeoDataFrame. The optional `handler` function transforms the data after
+loading.
 
 ```python
 # From a CSV with a cleaning function
@@ -123,7 +201,9 @@ rh = ResearchHandler(existing_df)
 rh = ResearchHandler(existing_df, clean)
 ```
 
-The `handler` function receives a `pd.DataFrame` (or `gpd.GeoDataFrame` for shapefiles) and must return one. If the source type is unsupported, a `TypeError` is raised. The `shapefile` parameter is keyword-only.
+The `handler` function receives a `pd.DataFrame` (or `gpd.GeoDataFrame` for
+shapefiles) and must return one. If the source type is unsupported, a
+`TypeError` is raised. The `shapefile` parameter is keyword-only.
 
 ### `create_subset(condition)`
 
@@ -141,7 +221,8 @@ Clears the working subset back to `None`.
 
 ### `set_dependent(col, full=True)`
 
-Sets the dependent (outcome) variable. Locks the source mode (see Design Notes).
+Sets the dependent (outcome) variable. Locks the source mode (see Design
+Notes).
 
 ```python
 rh.set_dependent("log_income")
@@ -168,22 +249,20 @@ rh.add_controls("female", "married", full=False)
 
 ### `get_X()` / `get_y()`
 
-Returns the design matrix as a `pd.DataFrame` or the dependent variable as a `pd.Series`.
-
-```python
-X = rh.get_X()
-y = rh.get_y()
-```
+Returns the design matrix as a `pd.DataFrame` or the dependent variable as
+a `pd.Series`.
 
 ### `get_spec()`
 
-Returns a frozen `ModelSpec` snapshot of the current variable specification. Contains copies of the design matrix, dependent variable, column name metadata, and the source DataFrame. Nothing mutates after creation.
+Returns a frozen `ModelSpec` snapshot of the current variable specification.
+Contains copies of the design matrix, dependent variable, column name
+metadata, and the source DataFrame. Nothing mutates after creation.
 
 ```python
 spec = rh.get_spec()
 
-spec.X              # DataFrame — same as get_X()
-spec.y              # Series — same as get_y()
+spec.X              # DataFrame: same as get_X()
+spec.y              # Series: same as get_y()
 spec.independents   # ("education", "experience")
 spec.controls       # ("female",)
 spec.dependent      # "log_income"
@@ -194,7 +273,9 @@ spec.n              # number of observations
 spec.data           # copy of the source DataFrame (for distribution fitting)
 ```
 
-`ModelSpec` is the bridge between `ResearchHandler` and the simulation module — pass it to `Simulation.from_spec()` to build a data-driven Monte Carlo simulation.
+`ModelSpec` is the bridge between `ResearchHandler` and the simulation
+module: pass it to `Simulation.from_spec()` to build a data-driven Monte
+Carlo simulation.
 
 ### `attach(col_name, series, to_full=True, quiet=False)`
 
@@ -223,7 +304,8 @@ rh.normalize_and_attach("wage", log_transform, "log_wage", full=False)
 
 ### `calculate_and_attach(source_cols, func, new_colname, full=True)`
 
-Applies a multi-column transformation and attaches the result. The function receives a DataFrame subset of the specified columns.
+Applies a multi-column transformation and attaches the result. The function
+receives a DataFrame subset of the specified columns.
 
 ```python
 from research_framework import interaction, row_mean, row_sum, safe_ratio
@@ -241,15 +323,13 @@ rh.calculate_and_attach(
 
 ### `clear_caches()`
 
-Clears the dependent, independents, controls, and source mode lock so you can set up a new specification without reinitializing.
-
-```python
-rh.clear_caches()
-```
+Clears the dependent, independents, controls, and source mode lock so you
+can set up a new specification without reinitializing.
 
 ## Transforms Reference
 
-`transforms.py` provides reusable functions so you don't have to write lambdas inline every time.
+`transforms.py` provides reusable functions so you don't have to write
+lambdas inline every time.
 
 ### Single-column transforms (Series → Series)
 
@@ -283,102 +363,13 @@ For use with `calculate_and_attach`:
 | `row_sum` | Row-wise sum | `rh.calculate_and_attach(["q1", "q2"], row_sum, "total")` |
 | `safe_ratio(num, denom)` | Division, 0 → NaN | `rh.calculate_and_attach(["rev", "vis"], safe_ratio("rev", "vis"), "rpv")` |
 
----
+## Simulation Module API
 
-## Simulation Module
+### `DistributionSpec(name, dist_type, params, empirical_data=None)`
 
-`simulation.py` provides a Monte Carlo simulation framework for running models under uncertainty. It integrates with `ResearchHandler` via `ModelSpec`, or can be used standalone with manually specified distributions.
-
-### Simulation Quick Start
-
-```python
-from research_framework import Simulation, DistributionSpec
-
-sim = Simulation(
-    variables=[
-        DistributionSpec("revenue", "normal", {"mean": 1_000_000, "std": 200_000}),
-        DistributionSpec("cost",    "uniform", {"low": 400_000, "high": 700_000}),
-    ],
-    model=lambda row: row["revenue"] - row["cost"],
-    n_iterations=10_000,
-    seed=42,
-)
-
-result = sim.run()
-print(f"Mean:   ${result.mean:,.0f}")
-print(f"95% CI: [${result.ci_lower:,.0f}, ${result.ci_upper:,.0f}]")
-```
-
-### Using with ResearchHandler
-
-The primary integration path is `get_spec()` + `Simulation.from_spec()`. This fits distributions from your observed data, infers the correlation structure, and returns a ready-to-run simulation — no manual `InputManager` wiring needed.
-
-```python
-from research_framework import ResearchHandler
-from research_framework import Simulation
-
-rh = ResearchHandler("labor_data.csv", clean)
-rh.normalize_and_attach("income", log_transform, "log_income")
-
-rh.set_dependent("log_income")
-rh.add_independents("education", "experience")
-rh.add_controls("female")
-
-spec = rh.get_spec()
-
-# Fit distributions from the observed data and simulate
-sim = Simulation.from_spec(
-    spec,
-    model=lambda row: 8.0 + 0.08 * row["education"] + 0.02 * row["experience"],
-    n_iterations=10_000,
-    seed=42,
-)
-result = sim.run()
-```
-
-Override the distribution family per column when the default doesn't fit:
-
-```python
-sim = Simulation.from_spec(
-    spec,
-    model=my_model,
-    dist_type="normal",                                     # default for all columns
-    overrides={"income": {"dist_type": "lognormal"},        # income is right-skewed
-               "satisfaction": {"dist_type": "empirical"}},  # resample directly
-)
-```
-
-Draw from the joint distribution without a model (useful for bootstrapping):
-
-```python
-sim = Simulation.from_spec(spec, include_dependent=True, dist_type="empirical")
-result = sim.engine.run()
-result.draws  # DataFrame with correlated draws of all variables including dependent
-```
-
-Note: `include_dependent=True` requires `model=None` — the two modes are mutually exclusive.
-
-For lower-level control you can still use `InputManager` directly:
-
-```python
-from research_framework import InputManager, DistributionSpec, ModelFunction, MonteCarloEngine
-
-mgr = InputManager()
-mgr.fit_from_data(rh.data, ["growth_rate", "churn_rate"], dist_type="normal")
-mgr.infer_correlation_from_data(rh.data)
-mgr.add_variable(DistributionSpec("subsidy", "uniform", {"low": 0, "high": 50_000}))
-
-model = ModelFunction(lambda row: row["growth_rate"] * 100_000 + row["subsidy"])
-engine = MonteCarloEngine(mgr, model, n_iterations=10_000, seed=42)
-result = engine.run()
-result.summarize()
-```
-
-### Simulation API Reference
-
-#### `DistributionSpec(name, dist_type, params, empirical_data=None)`
-
-Defines an uncertain variable and its probability distribution. Validation happens on construction — missing params or unknown distribution types raise immediately.
+Defines an uncertain variable and its probability distribution. Validation
+happens on construction: missing params or unknown distribution types
+raise immediately.
 
 | `dist_type` | Required `params` |
 |-------------|-------------------|
@@ -396,9 +387,10 @@ DistributionSpec("cost",     "uniform",  {"low": 4e5, "high": 7e5})
 DistributionSpec("duration", "empirical", empirical_data=observed_array)
 ```
 
-#### `InputManager`
+### `InputManager`
 
-Collects uncertain variables, fits distributions from data, manages correlation, and draws samples.
+Collects uncertain variables, fits distributions from data, manages
+correlation, and draws samples.
 
 ```python
 mgr = InputManager()
@@ -416,13 +408,16 @@ mgr.fit_from_data(df, ["col_c"], dist_type="empirical")
 mgr.set_correlation_matrix(np.array([[1.0, 0.6], [0.6, 1.0]]))
 mgr.infer_correlation_from_data(df)
 
-# Draw samples — returns DataFrame of shape (n, n_variables)
+# Draw samples: returns DataFrame of shape (n, n_variables)
 draws = mgr.draw(10_000, seed=42)
 ```
 
-When a correlation matrix is set, draws use a Gaussian copula (Cholesky decomposition + inverse-CDF transform) to produce correlated samples with the correct marginal distributions. Without a correlation matrix, draws are independent.
+When a correlation matrix is set, draws use a Gaussian copula (Cholesky
+decomposition + inverse-CDF transform) to produce correlated samples with
+the correct marginal distributions. Without a correlation matrix, draws are
+independent.
 
-#### `ModelFunction(func, vectorized=False)`
+### `ModelFunction(func, vectorized=False)`
 
 Wraps the user-supplied model function.
 
@@ -443,7 +438,7 @@ def multi(row):
 model = ModelFunction(multi)
 ```
 
-#### `MonteCarloEngine(inputs, model, n_iterations=10_000, seed=None)`
+### `MonteCarloEngine(inputs, model, n_iterations=10_000, seed=None)`
 
 Runs the simulation loop.
 
@@ -453,7 +448,7 @@ result = engine.run()
 result = engine.run(store_draws=False)  # save memory on large runs
 ```
 
-#### `SimulationResult`
+### `SimulationResult`
 
 Container for outcomes and summary statistics.
 
@@ -472,9 +467,11 @@ result.percentiles      # {1: ..., 5: ..., 10: ..., 25: ..., 50: ..., 75: ..., 9
 result.to_dataframe()   # draws + outcomes in one exportable DataFrame
 ```
 
-#### `Simulation(variables, model, *, n_iterations=10_000, seed=None, ...)`
+### `Simulation(variables, model, *, n_iterations=10_000, seed=None, ...)`
 
-Top-level facade that wires everything together. Use this with manual `DistributionSpec` lists, or use `Simulation.from_spec()` with a `ModelSpec` from `ResearchHandler`.
+Top-level facade that wires everything together. Use this with manual
+`DistributionSpec` lists, or use `Simulation.from_spec()` with a `ModelSpec`
+from `ResearchHandler`.
 
 ```python
 sim = Simulation(
@@ -502,14 +499,20 @@ sim.convergence             # ConvergenceDiagnostics (class reference)
 sim.plot                    # SimulationPlotter
 ```
 
-#### `Simulation.from_spec(spec, model, *, dist_type, overrides, include_dependent, ...)`
+### `Simulation.from_spec(spec, model, *, dist_type, overrides, include_dependent, ...)`
 
-Builds a `Simulation` from a `ModelSpec`. Fits distributions from the spec's observed data, infers the correlation matrix, and returns a ready-to-run simulation.
+Builds a `Simulation` from a `ModelSpec`. Fits distributions from the spec's
+observed data, infers the correlation matrix, and returns a ready-to-run
+simulation.
 
 Two modes:
 
-- **Standard** (default): `model` provided, `include_dependent=False`. Fits distributions on independents + controls. The model function produces outcomes from simulated inputs.
-- **Joint distribution**: `model=None`, `include_dependent=True`. Fits distributions on all variables including dependent. Returns correlated draws with no model applied.
+- **Standard** (default): `model` provided, `include_dependent=False`. Fits
+  distributions on independents + controls. The model function produces
+  outcomes from simulated inputs.
+- **Joint distribution**: `model=None`, `include_dependent=True`. Fits
+  distributions on all variables including dependent. Returns correlated
+  draws with no model applied.
 
 Passing both `model` and `include_dependent=True` raises `ValueError`.
 
@@ -529,7 +532,8 @@ sim = Simulation.from_spec(spec, include_dependent=True, dist_type="empirical")
 
 ### Sensitivity Analysis
 
-Accessed via `sim.sensitivity` or by constructing `SensitivityAnalyzer(engine)` directly.
+Accessed via `sim.sensitivity` or by constructing
+`SensitivityAnalyzer(engine)` directly.
 
 ```python
 # Tornado: which variable drives the most swing?
@@ -543,12 +547,13 @@ oat = sim.sensitivity.one_at_a_time("revenue", n_steps=20)
 
 # Sobol indices: variance-based global sensitivity
 sobol = sim.sensitivity.sobol_indices(n_samples=5_000, seed=99)
-# Returns DataFrame: variable, S1, S1_conf — sorted by S1 descending
+# Returns DataFrame: variable, S1, S1_conf, sorted by S1 descending
 ```
 
 ### Scenario Comparison
 
-Define named scenarios with distribution parameter overrides, then compare outcomes against baseline:
+Define named scenarios with distribution parameter overrides, then compare
+outcomes against baseline:
 
 ```python
 from research_framework import Scenario
@@ -572,7 +577,8 @@ summary = sim.compare_scenarios_summary(scenarios)
 # Returns DataFrame: scenario, mean, median, std, ci_lower, ci_upper, min, max
 ```
 
-Only the parameters that differ need to be specified — everything else stays at the base case.
+Only the parameters that differ need to be specified: everything else stays
+at the base case.
 
 ### Convergence Diagnostics
 
@@ -595,12 +601,13 @@ ConvergenceDiagnostics.suggest_n(result.outcomes, target_tolerance=0.005)
 
 # Snapshots at increasing N
 snapshots = sim.engine.run_convergence()
-# [SimulationResult(n=100), ..., SimulationResult(n=10000)] — all pre-summarized
+# [SimulationResult(n=100), ..., SimulationResult(n=10000)], all pre-summarized
 ```
 
 ### Plotting
 
-All plot methods return matplotlib `Figure` objects. Accessed via `sim.plot` or `SimulationPlotter` directly.
+All plot methods return matplotlib `Figure` objects. Accessed via `sim.plot`
+or `SimulationPlotter` directly.
 
 ```python
 fig = sim.plot.histogram(result)                        # distribution with CI shading
@@ -614,24 +621,18 @@ fig.savefig("output.png", dpi=150)
 
 ### Supported Distributions
 
-New distributions can be added by inserting an entry into `_DISTRIBUTION_REGISTRY` at the top of `simulation.py`. Each entry defines how to draw samples, validate parameters, fit from data, and transform through the inverse-CDF for correlated draws. No other code changes are required.
+New distributions can be added by inserting an entry into
+`_DISTRIBUTION_REGISTRY` at the top of `simulation.py`. Each entry defines
+how to draw samples, validate parameters, fit from data, and transform
+through the inverse-CDF for correlated draws. No other code changes are
+required.
 
----
-
-## Example Workflows
-
-All examples in `examples/` generate their own synthetic data so you can clone and run immediately:
-
-```bash
-python examples/ols_mincer.py
-python examples/random_forest_churn.py
-python examples/heckman_selection.py
-python examples/monte_carlo_test.py
-```
+## Example Workflows (full)
 
 ### OLS Regression with statsmodels
 
-A standard Mincer wage equation with log wages, centered experience, and a squared term.
+A standard Mincer wage equation with log wages, centered experience, and a
+squared term.
 
 ```python
 import numpy as np
@@ -724,7 +725,8 @@ print(ols.summary())
 
 ### Monte Carlo Portfolio Simulation
 
-Simulate a VC portfolio's 3-year value under uncertainty about growth, churn, market multiples, and discount rates.
+Simulate a VC portfolio's 3-year value under uncertainty about growth,
+churn, market multiples, and discount rates.
 
 ```python
 from research_framework import Simulation, DistributionSpec, Scenario
@@ -761,29 +763,31 @@ sim.plot.tornado_chart(tornado).savefig("tornado.png")
 sim.plot.scenario_comparison(results).savefig("scenarios.png")
 ```
 
-## Running Tests
-
-From the repo root:
-
-```bash
-pytest tests/test_handler.py -v
-```
-
-The test suite covers the full `ResearchHandler` class and every function in `transforms.py`, using synthetic data with no external dependencies.
-
-```bash
-pytest tests/test_handler.py::TestSubset -v
-pytest tests/test_handler.py::TestTransforms::test_z_score -v
-```
-
 ## Design Notes
 
-**Source mode locking.** The `set_dependent`, `add_independents`, and `add_controls` methods all accept a `full` parameter. The first call locks the source mode to either `"full"` or `"subset"`. Subsequent calls that use a different mode raise `ValueError` immediately rather than silently mixing columns from different DataFrames. `clear_caches()` resets the lock.
+**Source mode locking.** The `set_dependent`, `add_independents`, and
+`add_controls` methods all accept a `full` parameter. The first call locks
+the source mode to either `"full"` or `"subset"`. Subsequent calls that use
+a different mode raise `ValueError` immediately rather than silently mixing
+columns from different DataFrames. `clear_caches()` resets the lock.
 
-**Guard pattern.** Every method that accesses data checks `is not None` (not bare truthiness, which raises `ValueError` on DataFrames), handles both `full=True` and `full=False` branches explicitly, and bails early with a printed message when the needed dataset isn't available.
+**Guard pattern.** Every method that accesses data checks `is not None` (not
+bare truthiness, which raises `ValueError` on DataFrames), handles both
+`full=True` and `full=False` branches explicitly, and bails early with a
+printed message when the needed dataset isn't available.
 
-**ModelSpec as bridge.** `ResearchHandler` produces a frozen `ModelSpec` dataclass via `get_spec()`. The simulation module consumes it via `Simulation.from_spec()`. The dependency flows one direction: `simulation.py` can accept a `ModelSpec`, but does not import from `ResearchHandler.py`. `ResearchHandler.py` knows nothing about simulations.
+**ModelSpec as bridge.** `ResearchHandler` produces a frozen `ModelSpec`
+dataclass via `get_spec()`. The simulation module consumes it via
+`Simulation.from_spec()`. The dependency flows one direction: `simulation.py`
+can accept a `ModelSpec`, but does not import from `ResearchHandler.py`.
+`ResearchHandler.py` knows nothing about simulations.
 
-**Distribution registry.** `_DISTRIBUTION_REGISTRY` maps string names to draw functions, scipy distributions, and parameter translation maps. Adding a new distribution is a single dictionary insertion — no other code changes needed. Correlated draws use a Gaussian copula (Cholesky decomposition of the correlation matrix applied to standard normal draws, then transformed through each variable's inverse-CDF).
+**Distribution registry.** `_DISTRIBUTION_REGISTRY` maps string names to
+draw functions, scipy distributions, and parameter translation maps. Adding
+a new distribution is a single dictionary insertion: no other code changes
+needed. Correlated draws use a Gaussian copula (Cholesky decomposition of
+the correlation matrix applied to standard normal draws, then transformed
+through each variable's inverse-CDF).
 
-**Sensitivity analysis.** Includes one-at-a-time sweeps, tornado charts, and variance-based Sobol indices via the Saltelli sampling scheme.
+**Sensitivity analysis.** Includes one-at-a-time sweeps, tornado charts, and
+variance-based Sobol indices via the Saltelli sampling scheme.
