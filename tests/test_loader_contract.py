@@ -13,12 +13,10 @@ TWO BUGS THIS PINS DOWN, both fixed the same day and both silent:
   check, landed in the else, and overwrote the loaded data with an empty frame.
   Every file load read the file and threw the result away.
 
-AN OPEN DESIGN QUESTION, deliberately not asserted either way: operations on a
-handler whose load failed (so `data` is an empty frame) raise KeyError rather
-than warning, because the column being referenced is not there. Four deleted
-tests asserted they should warn instead. Whether to guard the empty-data path
-is a real decision; until it is made, a test asserting either behaviour would
-be locking in an accident.
+DECISION MADE 2026-08-28: operations on a handler whose load failed now raise
+`ResearchHandlerLoadFailedError`, naming the source whose load failed. That
+replaces the accidental later bare `KeyError` path. A successfully loaded but
+genuinely empty input is still valid and must not be treated as a load failure.
 """
 
 import pickle
@@ -28,6 +26,7 @@ import pytest
 
 from research_framework.rh import (
     ResearchHandler,
+    ResearchHandlerLoadFailedError,
     csv_loader,
     json_loader,
     parquet_loader,
@@ -117,6 +116,28 @@ def test_a_missing_file_gives_an_empty_frame_not_none(capsys):
     assert "nonexistent.csv" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda handler: handler.create_subset(lambda df: df["age"] > 30),
+        lambda handler: handler.set_dependent("income"),
+        lambda handler: handler.add_independents("age"),
+        lambda handler: handler.add_controls("age"),
+        lambda handler: handler.normalize_and_attach("income", lambda s: s, "income_copy"),
+        lambda handler: handler.calculate_and_attach(
+            ["age", "income"], lambda df: df["age"], "age_copy"
+        ),
+    ],
+)
+def test_operations_after_a_failed_load_raise_a_named_error(operation):
+    handler = ResearchHandler("nonexistent.csv", identity)
+    with pytest.raises(
+        ResearchHandlerLoadFailedError, match="nonexistent\\.csv"
+    ) as excinfo:
+        operation(handler)
+    assert "loading source 'nonexistent.csv' failed" in str(excinfo.value)
+
+
 def test_a_raising_handler_gives_an_empty_frame_not_none(csv_path, capsys):
     """Replaces the deleted test_bad_cleaning_function, which asserted None."""
 
@@ -136,6 +157,22 @@ def test_a_raising_handler_on_a_dataframe_source_also_degrades(frame, capsys):
     handler = ResearchHandler(frame, bad_clean)
     assert handler.data.empty
     assert "handler function" in capsys.readouterr().out
+
+
+def test_a_successfully_loaded_but_empty_input_is_not_a_failed_load(tmp_path):
+    path = tmp_path / "empty.csv"
+    pd.DataFrame(columns=["age", "income"]).to_csv(path, index=False)
+
+    handler = ResearchHandler(path, identity)
+
+    handler.set_dependent("income")
+    handler.add_independents("age")
+
+    assert handler.data.empty
+    assert handler.dependent is not None
+    assert handler.dependent.empty
+    assert len(handler.independents) == 1
+    assert handler.independents[0].empty
 
 
 def test_an_unusable_source_type_is_reported(capsys):

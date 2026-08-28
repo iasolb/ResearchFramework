@@ -2,7 +2,7 @@
 handling with tracked model specifications, reusable column transforms,
 and a Monte Carlo simulation module."""
 
-from .rh import ModelSpec, ResearchHandler
+from .rh import ModelSpec, ResearchHandler, ResearchHandlerLoadFailedError
 from .simulation import (
     ConvergenceDiagnostics,
     DistributionSpec,
@@ -39,6 +39,7 @@ __all__ = [
     "ModelSpec",
     "MonteCarloEngine",
     "ResearchHandler",
+    "ResearchHandlerLoadFailedError",
     "Scenario",
     "SensitivityAnalyzer",
     "Simulation",
