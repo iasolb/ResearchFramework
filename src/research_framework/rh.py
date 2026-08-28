@@ -180,25 +180,55 @@ class ResearchHandler:
 
     @staticmethod
     def _load(
-        source: Path | Any,
+        source: Path | str | Any,
         handler: Optional[Callable],
         data_format: Optional[str] = None,
     ) -> pd.DataFrame | gpd.GeoDataFrame:
-        if data_format and isinstance(source, Path):
+        """Load from a path or take a frame as given, then run `handler` over it.
+
+        Returns an EMPTY frame rather than raising when the source or format is
+        unusable, and prints why. Callers check `len(handler.data)`.
+
+        `data_format` is one of the `_LOADER_REG` keys and is inferred from the
+        file extension when omitted.
+
+        Two bugs fixed here 2026-08-28, which together made every file load
+        fail silently and accounted for 26 failing tests:
+
+        - a `str` path was rejected outright, because only `Path` was accepted,
+          while the class docstring documented `ResearchHandler("data.csv")`.
+        - the path branch computed its result and then FELL THROUGH to the
+          DataFrame check below. A path is not a DataFrame, so it landed in the
+          else, printed "Invalid source type", and overwrote the loaded data
+          with an empty frame. The file was read and the result thrown away.
+        """
+        # A string path is a path. Accepting only Path contradicted the
+        # documented usage and is the more common way to call this.
+        if isinstance(source, str):
+            source = Path(source)
+
+        if isinstance(source, Path):
+            # Infer from the extension when not told, so the documented
+            # `ResearchHandler("data.csv")` works with no data_format.
+            fmt = data_format or source.suffix.lstrip(".").lower()
+            if fmt not in _LOADER_REG:
+                print(
+                    f"Unsupported data_format '{fmt}'. "
+                    f"Supported: {sorted(_LOADER_REG)}"
+                )
+                return pd.DataFrame()
             try:
-                loader = _LOADER_REG[data_format]
-                raw = loader(source)
-                if handler:
-                    try:
-                        output = handler(raw)
-                    except Exception as e:
-                        print("Error occurred in handler function")
-                        return pd.DataFrame()  # empty fallback
-                else:
-                    output = raw
+                raw = _LOADER_REG[fmt](source)
             except Exception as e:
-                print("Invalid data_format specified or error in loader function")
-                return pd.DataFrame()  # empty fallback
+                print(f"Could not load {source} as {fmt}: {e}")
+                return pd.DataFrame()
+            if handler:
+                try:
+                    return handler(raw)
+                except Exception:
+                    print("Error occurred in handler function")
+                    return pd.DataFrame()  # empty fallback
+            return raw
 
         if isinstance(source, (pd.DataFrame, gpd.GeoDataFrame)):
             raw = source

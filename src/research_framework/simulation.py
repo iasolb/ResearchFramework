@@ -1,7 +1,13 @@
-"""
-Ian Solberg
-March '26
-Simulation Extension of Research Framework
+"""Monte Carlo simulation: draw uncertain inputs, run a model, summarise outcomes.
+
+Start with `Simulation`, which wires the pieces together. The pieces are
+usable on their own when you need more control: `InputManager` holds the
+variables and their correlation, `MonteCarloEngine` runs the draws,
+`SensitivityAnalyzer` asks which inputs matter, `ScenarioComparator` runs
+what-ifs, and `ConvergenceDiagnostics` says whether you ran enough iterations.
+
+Add a distribution by adding an entry to `_DISTRIBUTION_REGISTRY`; everything
+that draws, fits or inverts a distribution reads it from there.
 """
 
 import numpy as np
@@ -63,6 +69,15 @@ _DISTRIBUTION_REGISTRY: dict[str, dict] = {
 
 @dataclass
 class DistributionSpec:
+    """One uncertain input: its name, its distribution, and that distribution's
+    parameters. Validated on construction, so a bad spec fails here rather than
+    thousands of draws later.
+
+    `dist_type="empirical"` resamples `empirical_data` instead of using
+    `params`; every other type reads its required parameter names from
+    `_DISTRIBUTION_REGISTRY`.
+    """
+
     name: str
     dist_type: str
     params: dict = field(default_factory=dict)
@@ -87,6 +102,12 @@ class DistributionSpec:
 
 
 class InputManager:
+    """The set of uncertain inputs, and optionally how they correlate.
+
+    Insertion order is preserved and is the column order of every draw, which
+    is what makes a correlation matrix's rows meaningful.
+    """
+
     def __init__(self):
         self.specs: dict[str, DistributionSpec] = {}
         self.correlation_matrix: Optional[np.ndarray] = None
@@ -111,6 +132,8 @@ class InputManager:
             self.add_variable(spec)
 
     def remove_variable(self, name: str) -> None:
+        """Remove a variable. Drops any correlation matrix, since its shape no
+        longer matches the variables."""
         if name not in self.specs:
             raise KeyError(f"Variable '{name}' not found.")
         del self.specs[name]
@@ -118,6 +141,12 @@ class InputManager:
         self.correlation_matrix = None
 
     def fit_from_data(self, df: pd.DataFrame, columns: list[str], dist_type: str = "normal") -> list[DistributionSpec]:
+        """Fit a distribution to each named column and register it.
+
+        Returns the specs it created. NaNs are dropped per column, so columns
+        with different amounts of missing data are each fitted on what they
+        have.
+        """
         created = []
         for col in columns:
             if col not in df.columns:
@@ -138,6 +167,13 @@ class InputManager:
         return created
 
     def set_correlation_matrix(self, matrix: np.ndarray) -> None:
+        """Set the correlation between variables, in `variable_names` order.
+
+        Rejects anything the sampler could not use: wrong shape, asymmetric, a
+        diagonal that is not 1, or not positive semi-definite. The last one is
+        the important check, because Cholesky would otherwise fail deep inside
+        a draw with a much less obvious error.
+        """
         n = self.n_variables
         matrix = np.asarray(matrix, dtype=float)
         if matrix.shape != (n, n):
@@ -152,6 +188,7 @@ class InputManager:
         self.correlation_matrix = matrix
 
     def infer_correlation_from_data(self, df: pd.DataFrame) -> np.ndarray:
+        """Take the correlation matrix from real data and set it. Returns it too."""
         missing = [v for v in self.variable_names if v not in df.columns]
         if missing:
             raise KeyError(f"Columns not found in DataFrame: {missing}")
@@ -172,6 +209,13 @@ class InputManager:
         return pd.DataFrame(columns)
 
     def _draw_correlated(self, n: int, rng: np.random.Generator) -> pd.DataFrame:
+        """Draw correlated samples via a Gaussian copula.
+
+        Correlated normals go through the normal CDF to get correlated uniforms,
+        which are then pushed through each variable's own inverse CDF. That is
+        what preserves each marginal distribution while still correlating them:
+        a lognormal stays lognormal, it does not become normal-ish.
+        """
         k = self.n_variables
         z = rng.standard_normal(size=(n, k))
         if self.correlation_matrix is not None:
@@ -197,6 +241,8 @@ class InputManager:
         return pd.DataFrame(columns)
 
     def draw(self, n: int, seed: Optional[int] = None) -> pd.DataFrame:
+        """Draw `n` rows, one column per variable. Correlated if a correlation
+        matrix is set, independent otherwise. Pass `seed` for a repeatable draw."""
         if self.n_variables == 0:
             raise RuntimeError("No variables registered. Use add_variable() first.")
         rng = np.random.default_rng(seed)
@@ -207,11 +253,20 @@ class InputManager:
 
 
 class ModelFunction:
+    """The model under simulation, wrapped so the engine can call it either way.
+
+    `vectorized=True` means the function takes the whole draws frame at once,
+    which is far faster. `False` means it takes one row at a time. A function
+    that returns a dict per row produces a multi-column outcome frame.
+    """
+
     def __init__(self, func: Callable, vectorized: bool = False):
         self.func = func
         self.vectorized = vectorized
 
     def run(self, draws: pd.DataFrame) -> np.ndarray | pd.DataFrame:
+        """Run the model over the draws. Returns an array for a single outcome,
+        a frame when the model returns several per row."""
         if self.vectorized:
             result = self.func(draws)
             if isinstance(result, pd.DataFrame):
@@ -225,6 +280,11 @@ class ModelFunction:
 
 @dataclass
 class SimulationResult:
+    """One run's outcomes, plus the draws that produced them.
+
+    The summary statistics are None until `summarize()` fills them in.
+    """
+
     outcomes: np.ndarray = field(default_factory=lambda: np.array([]))
     draws: Optional[pd.DataFrame] = None
     n_iterations: int = 0
@@ -237,6 +297,13 @@ class SimulationResult:
     ci_upper: Optional[float] = None
 
     def summarize(self, confidence: float = 0.95) -> dict:
+        """Compute and store mean, median, std, percentiles and a confidence
+        interval, and return them as a dict.
+
+        Mutates this object as well as returning: later calls to `__repr__` and
+        the scenario comparison read the stored values. A multi-column outcome
+        is summarised on its FIRST column only.
+        """
         if len(self.outcomes) == 0:
             raise RuntimeError("No outcomes to summarize.")
         if isinstance(self.outcomes, pd.DataFrame):
@@ -255,6 +322,8 @@ class SimulationResult:
         return {"mean": self.mean, "median": self.median, "std": self.std, "min": float(np.min(values)), "max": float(np.max(values)), "percentiles": self.percentiles, "ci_lower": self.ci_lower, "ci_upper": self.ci_upper, "confidence": confidence, "n_iterations": self.n_iterations}
 
     def to_dataframe(self) -> pd.DataFrame:
+        """Inputs and outcomes side by side, one row per iteration. Outcomes
+        alone when the draws were not stored."""
         if self.draws is None:
             if isinstance(self.outcomes, pd.DataFrame):
                 return self.outcomes.copy()
@@ -277,6 +346,8 @@ class SimulationResult:
 
 
 class MonteCarloEngine:
+    """Draws inputs, runs the model, returns the outcomes."""
+
     def __init__(self, inputs: InputManager, model: ModelFunction, n_iterations: int = 10_000, seed: Optional[int] = None):
         self.inputs = inputs
         self.model = model
@@ -284,11 +355,24 @@ class MonteCarloEngine:
         self.seed = seed
 
     def run(self, store_draws: bool = True) -> SimulationResult:
+        """Run once. The result is NOT summarised; call `summarize()` on it.
+
+        `store_draws=False` drops the input frame, which matters at large
+        iteration counts.
+        """
         draws = self.inputs.draw(self.n_iterations, seed=self.seed)
         outcomes = np.array(self.model.run(draws))
         return SimulationResult(outcomes=outcomes, draws=draws if store_draws else None, n_iterations=self.n_iterations, seed=self.seed)
 
     def run_convergence(self, checkpoints: list[int] | None = None) -> list[SimulationResult]:
+        """Summarised snapshots at increasing iteration counts, for plotting how
+        the estimate settles.
+
+        One run at the largest checkpoint is sliced, rather than one run per
+        checkpoint. So the snapshots are nested prefixes of the same draws,
+        which is what makes the curve smooth instead of jumping between
+        independent samples, and it costs one run rather than several.
+        """
         if checkpoints is None:
             candidates = [100, 500, 1_000, 2_500, 5_000, self.n_iterations]
             checkpoints = [c for c in candidates if c <= self.n_iterations]
@@ -314,10 +398,19 @@ class MonteCarloEngine:
 
 
 class SensitivityAnalyzer:
+    """Which inputs actually move the outcome.
+
+    `one_at_a_time` and `tornado` hold everything else at a central value and
+    are cheap. `sobol_indices` accounts for interactions and is not.
+    """
+
     def __init__(self, engine: MonteCarloEngine):
         self.engine = engine
 
     def _get_baseline_row(self) -> pd.Series:
+        """A single central value per variable, distribution by distribution:
+        the mean for a normal, the mode for a triangular, the median for
+        empirical data, and so on."""
         values = {}
         for name, spec in self.engine.inputs.specs.items():
             if spec.dist_type == "empirical":
@@ -337,9 +430,19 @@ class SensitivityAnalyzer:
                 values[name] = spec.params["scale"]
             else:
                 values[name] = 0.0
-        return pd.Series(values)
+        # float, always. When every central value happens to be a whole number
+        # (a normal with mean 10, a triangular with mode 100) pandas infers
+        # int64, and the sweeps below then assign a float into it, which newer
+        # pandas refuses as a lossy setitem instead of silently upcasting. The
+        # column is conceptually continuous either way.
+        return pd.Series(values, dtype=float)
 
     def _get_variable_range(self, spec: DistributionSpec, n_steps: int, low_pct: float = 1, high_pct: float = 99) -> np.ndarray:
+        """Evenly spaced values spanning a percentile range of one variable.
+
+        Percentiles rather than a fixed multiple of the standard deviation, so
+        an unbounded distribution does not produce impossible values.
+        """
         if spec.dist_type == "empirical":
             return np.linspace(np.percentile(np.array(spec.empirical_data), low_pct), np.percentile(np.array(spec.empirical_data), high_pct), n_steps)
         registry = _DISTRIBUTION_REGISTRY[spec.dist_type]
@@ -350,6 +453,11 @@ class SensitivityAnalyzer:
         return np.linspace(lo, hi, n_steps)
 
     def one_at_a_time(self, variable: str, values: np.ndarray | None = None, n_steps: int = 20) -> pd.DataFrame:
+        """Sweep one variable across its range with the rest held central.
+
+        Deterministic, not simulated: the model is evaluated once per value, so
+        this shows the response curve and says nothing about interactions.
+        """
         if variable not in self.engine.inputs.specs:
             raise KeyError(f"Variable '{variable}' not registered.")
         spec = self.engine.inputs.specs[variable]
@@ -367,6 +475,11 @@ class SensitivityAnalyzer:
         return pd.DataFrame({"variable_value": values, "outcome": outcomes})
 
     def tornado(self, low_pct: float = 10, high_pct: float = 90) -> pd.DataFrame:
+        """Every variable's low-to-high swing in the outcome, biggest first.
+
+        Two model evaluations per variable, so it is cheap. Like
+        `one_at_a_time` it ignores interactions.
+        """
         baseline = self._get_baseline_row()
         rows = []
         for name, spec in self.engine.inputs.specs.items():
@@ -386,6 +499,13 @@ class SensitivityAnalyzer:
         return pd.DataFrame(rows).sort_values("swing", ascending=False).reset_index(drop=True)
 
     def sobol_indices(self, n_samples: int = 10_000, seed: Optional[int] = None) -> pd.DataFrame:
+        """First-order Sobol indices with bootstrapped confidence, biggest first.
+
+        S1 is the share of outcome variance explained by each variable on its
+        own. Unlike the tornado this respects the real joint distribution, and
+        it is the expensive one here: the bootstrap re-runs the model many
+        times per variable.
+        """
         mgr = self.engine.inputs
         k = mgr.n_variables
         rng = np.random.default_rng(seed or self.engine.seed)
@@ -435,11 +555,23 @@ class SensitivityAnalyzer:
 
 @dataclass
 class Scenario:
+    """A named what-if: `{variable: {param: value}}` applied over the base inputs.
+
+    Overrides are merged into a variable's existing params, so a scenario can
+    change a mean without restating its standard deviation.
+    """
+
     name: str
     overrides: dict[str, dict] = field(default_factory=dict)
 
 
 class ScenarioComparator:
+    """Run the baseline and each scenario, then compare them side by side.
+
+    Every run shares one seed, so differences between scenarios are the
+    overrides rather than sampling noise.
+    """
+
     def __init__(self, base_inputs: InputManager, model: ModelFunction, scenarios: list[Scenario], n_iterations: int = 10_000, seed: Optional[int] = None):
         self.base_inputs = base_inputs
         self.model = model
@@ -449,6 +581,8 @@ class ScenarioComparator:
         self._results: dict[str, SimulationResult] = {}
 
     def _apply_overrides(self, scenario: Scenario) -> InputManager:
+        """A deep copy of the base inputs with this scenario's overrides applied,
+        so scenarios never mutate the baseline or each other."""
         modified = deepcopy(self.base_inputs)
         for var_name, param_overrides in scenario.overrides.items():
             if var_name not in modified.specs:
@@ -458,6 +592,8 @@ class ScenarioComparator:
         return modified
 
     def run_all(self) -> dict[str, SimulationResult]:
+        """Run every scenario plus the baseline. Keyed by scenario name, with
+        the baseline under "baseline"; results are summarised."""
         engine = MonteCarloEngine(self.base_inputs, self.model, self.n_iterations, self.seed)
         baseline_result = engine.run()
         baseline_result.summarize()
@@ -471,6 +607,8 @@ class ScenarioComparator:
         return self._results
 
     def compare_summary(self) -> pd.DataFrame:
+        """One row per scenario with its summary statistics. Runs them first if
+        they have not been run."""
         if not self._results:
             self.run_all()
         rows = []
@@ -482,8 +620,12 @@ class ScenarioComparator:
 
 
 class ConvergenceDiagnostics:
+    """Did you run enough iterations. All static; call without instantiating."""
+
     @staticmethod
     def running_statistics(outcomes: np.ndarray) -> pd.DataFrame:
+        """Cumulative mean and standard deviation after each iteration, for
+        plotting the estimate settling down."""
         if isinstance(outcomes, pd.DataFrame):
             outcomes = np.array(outcomes.iloc[:, 0].values)
         n = len(outcomes)
@@ -499,6 +641,12 @@ class ConvergenceDiagnostics:
 
     @staticmethod
     def is_converged(outcomes: np.ndarray, window: int = 1000, tolerance: float = 0.01) -> bool:
+        """True when the last `window` iterations agree with the overall mean to
+        within `tolerance`, relatively.
+
+        False when there are fewer than two windows of data: too little to
+        judge is reported as not converged rather than as converged.
+        """
         if isinstance(outcomes, pd.DataFrame):
             outcomes = np.array(outcomes.iloc[:, 0].values)
         if len(outcomes) < window * 2:
@@ -512,6 +660,11 @@ class ConvergenceDiagnostics:
 
     @staticmethod
     def suggest_n(outcomes: np.ndarray, target_tolerance: float = 0.005, confidence: float = 0.95) -> int:
+        """How many iterations to hit `target_tolerance` on the mean.
+
+        Never returns fewer than you already ran, so it reads as "run at least
+        this many" rather than suggesting you throw work away.
+        """
         if isinstance(outcomes, pd.DataFrame):
             outcomes = np.array(outcomes.iloc[:, 0].values)
         mean = np.mean(outcomes)
@@ -524,6 +677,32 @@ class ConvergenceDiagnostics:
 
 
 class Simulation:
+    """The entry point: uncertain variables plus a model, ready to run.
+
+    Wires up the input manager, engine, sensitivity analyser and convergence
+    diagnostics so you do not have to::
+
+        from research_framework.simulation import DistributionSpec, Simulation
+
+        sim = Simulation(
+            variables=[
+                DistributionSpec("price", "normal", {"mean": 10, "std": 2}),
+                DistributionSpec("units", "triangular",
+                                 {"left": 80, "mode": 100, "right": 150}),
+            ],
+            model=lambda row: row["price"] * row["units"],
+            seed=42,
+        )
+        result = sim.run()
+        result.summarize()
+        sim.sensitivity.tornado()
+        sim.check_convergence(result)
+
+    Pass `vectorized=True` when the model takes the whole frame at once, which
+    is much faster. Pass `correlation_matrix` to correlate the inputs, in the
+    order the variables were given.
+    """
+
     def __init__(self, variables: list[DistributionSpec], model: Callable, *, vectorized: bool = False, n_iterations: int = 10_000, seed: Optional[int] = None, correlation_matrix: Optional[np.ndarray] = None):
         self.input_manager = InputManager()
         self.model_fn = ModelFunction(model, vectorized=vectorized)
@@ -537,20 +716,25 @@ class Simulation:
         self.convergence = ConvergenceDiagnostics
 
     def run(self) -> SimulationResult:
+        """Run the simulation and return a summarised result."""
         result = self.engine.run()
         result.summarize()
         return result
 
     def compare_scenarios(self, scenarios: list[Scenario]) -> dict[str, SimulationResult]:
+        """Run these scenarios against the baseline. Results keyed by name."""
         comparator = ScenarioComparator(base_inputs=self.input_manager, model=self.model_fn, scenarios=scenarios, n_iterations=self.n_iterations, seed=self.seed)
         return comparator.run_all()
 
     def compare_scenarios_summary(self, scenarios: list[Scenario]) -> pd.DataFrame:
+        """Same as `compare_scenarios` but returns the comparison table."""
         comparator = ScenarioComparator(base_inputs=self.input_manager, model=self.model_fn, scenarios=scenarios, n_iterations=self.n_iterations, seed=self.seed)
         comparator.run_all()
         return comparator.compare_summary()
 
     def check_convergence(self, result: SimulationResult) -> dict:
+        """Whether this result converged, how many iterations are suggested, and
+        the relative standard error of its mean."""
         values = result.outcomes
         if isinstance(values, pd.DataFrame):
             values = np.array(values.iloc[:, 0].values)
@@ -563,6 +747,19 @@ class Simulation:
 
     @classmethod
     def from_spec(cls, spec, model: Optional[Callable] = None, *, dist_type: str = "normal", overrides: Optional[dict[str, dict]] = None, include_dependent: bool = False, n_iterations: int = 10_000, seed: Optional[int] = None, vectorized: bool = False) -> "Simulation":
+        """Build a simulation by fitting distributions to a ModelSpec's real data.
+
+        Fits every independent and control column, and infers their correlation
+        from the same data, so the draws keep the relationships the data had.
+
+        `model` and `include_dependent` are mutually exclusive, and exactly one
+        is required. Supply a `model` to simulate an outcome you compute;
+        set `include_dependent=True` to resample the observed dependent variable
+        alongside the inputs instead, which needs no model.
+
+        `overrides` sets a different distribution per column, as
+        `{column: {"dist_type": ...}}`, on top of the `dist_type` default.
+        """
         if include_dependent and model is not None:
             raise ValueError("Cannot use both include_dependent=True and a model function.")
         if not include_dependent and model is None:
