@@ -1,0 +1,22 @@
+name: Tests
+
+on:
+  # Only main on push. Without the branch filter, a pull request from a branch
+  # in this repo triggers BOTH events and every job runs twice.
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -e ".[dev]"
+      - run: pytest
