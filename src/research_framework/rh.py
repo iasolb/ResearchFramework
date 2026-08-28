@@ -58,6 +58,10 @@ class ModelSpec:
         )
 
 
+class ResearchHandlerLoadFailedError(RuntimeError):
+    """Raised when an operation is attempted after a handler load failed."""
+
+
 # === Loader Functions Utils
 
 
@@ -169,7 +173,9 @@ class ResearchHandler:
             ResearchHandler("regions.shp", data_format="shp")
             ResearchHandler(existing_df)
         """
-        self.data = self._load(source, handler, data_format)
+        self.data, self._load_failed, self._failed_source = self._load(
+            source, handler, data_format
+        )
         self.subset = None
         self.dependent = None
         self.independents = []
@@ -183,7 +189,7 @@ class ResearchHandler:
         source: Path | str | Any,
         handler: Optional[Callable],
         data_format: Optional[str] = None,
-    ) -> pd.DataFrame | gpd.GeoDataFrame:
+    ) -> tuple[pd.DataFrame | gpd.GeoDataFrame, bool, Optional[str]]:
         """Load from a path or take a frame as given, then run `handler` over it.
 
         Returns an EMPTY frame rather than raising when the source or format is
@@ -216,35 +222,42 @@ class ResearchHandler:
                     f"Unsupported data_format '{fmt}'. "
                     f"Supported: {sorted(_LOADER_REG)}"
                 )
-                return pd.DataFrame()
+                return pd.DataFrame(), True, str(source)
             try:
                 raw = _LOADER_REG[fmt](source)
             except Exception as e:
                 print(f"Could not load {source} as {fmt}: {e}")
-                return pd.DataFrame()
+                return pd.DataFrame(), True, str(source)
             if handler:
                 try:
-                    return handler(raw)
+                    return handler(raw), False, None
                 except Exception:
                     print("Error occurred in handler function")
-                    return pd.DataFrame()  # empty fallback
-            return raw
+                    return pd.DataFrame(), True, str(source)
+            return raw, False, None
 
         if isinstance(source, (pd.DataFrame, gpd.GeoDataFrame)):
             raw = source
             if handler:
                 try:
                     output = handler(raw)
-                except Exception as e:
+                except Exception:
                     print("Error occurred in handler function")
-                    return pd.DataFrame()  # empty fallback
+                    return pd.DataFrame(), True, f"provided {type(source).__name__}"
             else:
                 output = raw
         else:
             print("Invalid source type. Must be filepath or DataFrame.")
-            output = pd.DataFrame()  # empty fallback
+            return pd.DataFrame(), True, str(source)
 
-        return output
+        return output, False, None
+
+    def _raise_if_load_failed(self) -> None:
+        if self._load_failed:
+            raise ResearchHandlerLoadFailedError(
+                f"Cannot operate on ResearchHandler because loading source "
+                f"'{self._failed_source}' failed."
+            )
 
     def create_subset(self, condition: Callable) -> None:
         """
@@ -253,6 +266,7 @@ class ResearchHandler:
             handler.create_subset(lambda df: df["age"] > 30)
             handler.create_subset(lambda df: df["country"].isin(["US", "UK"]))
         """
+        self._raise_if_load_failed()
         if self.data is not None:
             self.subset = self.data[condition(self.data)].copy()
         else:
@@ -282,6 +296,7 @@ class ResearchHandler:
             handler.set_dependent("income")
             handler.set_dependent("income", full=False)
         """
+        self._raise_if_load_failed()
         self._enforce_source_mode(full)
         if full and self.data is not None:
             self.dependent = self.data[col]
@@ -299,6 +314,7 @@ class ResearchHandler:
             handler.add_independents("age", "education", "experience")
             handler.add_independents("age", "education", full=False)
         """
+        self._raise_if_load_failed()
         self._enforce_source_mode(full)
         if full and self.data is not None:
             df = self.data
@@ -318,6 +334,7 @@ class ResearchHandler:
             handler.add_controls("gender", "region")
             handler.add_controls("gender", "region", full=False)
         """
+        self._raise_if_load_failed()
         self._enforce_source_mode(full)
         if full and self.data is not None:
             df = self.data
@@ -380,6 +397,7 @@ class ResearchHandler:
             handler.normalize_and_attach("income", np.log, "log_income")
             handler.normalize_and_attach("score", lambda s: (s - s.mean()) / s.std(), "z_score", full=False)
         """
+        self._raise_if_load_failed()
         if full and self.data is not None:
             result = normalizing_function(self.data[source_col])
             self.attach(col_name=new_colname, series=result, to_full=True, quiet=True)
@@ -408,6 +426,7 @@ class ResearchHandler:
             handler.calculate_and_attach(["math", "reading"], lambda df: df.mean(axis=1), "avg_score", full=False)
         little weird
         """
+        self._raise_if_load_failed()
         if full and self.data is not None:
             result = func(self.data[source_cols])
             self.attach(col_name=new_colname, series=result, to_full=True, quiet=True)
