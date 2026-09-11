@@ -18,7 +18,8 @@ All plotter classes return plotly Figure objects.
 Call .show() for interactive display or .write_image() for static export.
 
 Dependencies:
-    pip install plotly kaleido scipy
+    pip install plotly scipy          # interactive figures
+    pip install "otter[plots]"        # adds kaleido, for write_image only
 
 Usage:
     from plotter import SimulationPlotter
