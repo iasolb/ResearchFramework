@@ -1,13 +1,13 @@
 """
-Common transforms for use with ResearchHandler.
+Common transforms for use with Pond.
 
 Single-column transforms (for use with normalize_and_attach):
-    rh.normalize_and_attach("age", mean_center, "age_c")
-    rh.normalize_and_attach("income", log_transform, "log_income")
+    pond.normalize_and_attach("age", mean_center, "age_c")
+    pond.normalize_and_attach("income", log_transform, "log_income")
 
-Multi-column transforms (for use with apply_and_attach):
-    rh.apply_and_attach(["education", "experience"], interaction, "edu_x_exp")
-    rh.apply_and_attach(["math", "reading", "science"], row_mean, "avg_score")
+Multi-column transforms (for use with calculate_and_attach):
+    pond.calculate_and_attach(["education", "experience"], interaction, "edu_x_exp")
+    pond.calculate_and_attach(["math", "reading", "science"], row_mean, "avg_score")
 """
 
 import numpy as np
@@ -59,7 +59,7 @@ def winsorize(lower: float = 0.01, upper: float = 0.99):
     Returns a transform that clips values at the given quantiles.
 
     Usage:
-        rh.normalize_and_attach("income", winsorize(0.01, 0.99), "income_wins")
+        pond.normalize_and_attach("income", winsorize(0.01, 0.99), "income_wins")
     """
 
     def _winsorize(s: pd.Series) -> pd.Series:
@@ -76,7 +76,7 @@ def demean_by_group(group_col: pd.Series):
     Returns a transform that subtracts group-level means (fixed-effects style).
 
     Usage:
-        rh.normalize_and_attach("income", demean_by_group(rh.data["industry"]), "income_demeaned")
+        pond.normalize_and_attach("income", demean_by_group(pond.data["industry"]), "income_demeaned")
     """
 
     def _demean(s: pd.Series) -> pd.Series:
@@ -93,10 +93,10 @@ def demean_by_group(group_col: pd.Series):
 
 def interaction(df: pd.DataFrame) -> pd.Series:
     """
-    Product of the first two columns. For use with apply_and_attach.
+    Product of the first two columns. For use with calculate_and_attach.
 
     Usage:
-        rh.apply_and_attach(["education", "experience"], interaction, "edu_x_exp")
+        pond.calculate_and_attach(["education", "experience"], interaction, "edu_x_exp")
     """
     cols = df.columns
     return df[cols[0]] * df[cols[1]]
@@ -107,7 +107,7 @@ def row_mean(df: pd.DataFrame) -> pd.Series:
     Row-wise mean across all provided columns.
 
     Usage:
-        rh.apply_and_attach(["math", "reading", "science"], row_mean, "avg_score")
+        pond.calculate_and_attach(["math", "reading", "science"], row_mean, "avg_score")
     """
     return df.mean(axis=1)
 
@@ -117,7 +117,7 @@ def row_sum(df: pd.DataFrame) -> pd.Series:
     Row-wise sum across all provided columns.
 
     Usage:
-        rh.apply_and_attach(["q1", "q2", "q3", "q4"], row_sum, "total")
+        pond.calculate_and_attach(["q1", "q2", "q3", "q4"], row_sum, "total")
     """
     return df.sum(axis=1)
 
@@ -127,7 +127,7 @@ def safe_ratio(numerator: str, denominator: str):
     Returns a transform that computes a ratio, replacing division by zero with NaN.
 
     Usage:
-        rh.apply_and_attach(["revenue", "visits"], safe_ratio("revenue", "visits"), "rev_per_visit")
+        pond.calculate_and_attach(["revenue", "visits"], safe_ratio("revenue", "visits"), "rev_per_visit")
     """
 
     def _ratio(df: pd.DataFrame) -> pd.Series:

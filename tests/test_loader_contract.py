@@ -1,4 +1,4 @@
-"""What `ResearchHandler._load` and the loader functions actually promise.
+"""What `Pond._load` and the loader functions actually promise.
 
 This file replaces four tests deleted from test_handler.py on 2026-08-28 that
 asserted `handler.data is None` on failure. That is a dead contract: `_load`
@@ -8,13 +8,13 @@ so they are re-asserted here against the real contract.
 TWO BUGS THIS PINS DOWN, both fixed the same day and both silent:
 
 - a `str` path was rejected outright, while the class docstring documented
-  `ResearchHandler("data.csv")`.
+  `Pond("data.csv")`.
 - the path branch computed its result and then fell through to the DataFrame
   check, landed in the else, and overwrote the loaded data with an empty frame.
   Every file load read the file and threw the result away.
 
 DECISION MADE 2026-08-28: operations on a handler whose load failed now raise
-`ResearchHandlerLoadFailedError`, naming the source whose load failed. That
+`PondLoadFailedError`, naming the source whose load failed. That
 replaces the accidental later bare `KeyError` path. A successfully loaded but
 genuinely empty input is still valid and must not be treated as a load failure.
 """
@@ -24,9 +24,9 @@ import pickle
 import pandas as pd
 import pytest
 
-from otter.rh import (
-    ResearchHandler,
-    ResearchHandlerLoadFailedError,
+from otter.pond import (
+    Pond,
+    PondLoadFailedError,
     csv_loader,
     json_loader,
     parquet_loader,
@@ -56,27 +56,27 @@ def csv_path(tmp_path, frame):
 
 def test_a_str_path_loads(csv_path, frame):
     """The documented call. Rejected outright before 2026-08-28."""
-    handler = ResearchHandler(str(csv_path), identity)
+    handler = Pond(str(csv_path), identity)
     assert len(handler.data) == len(frame)
     assert list(handler.data.columns) == list(frame.columns)
 
 
 def test_a_path_object_loads(csv_path, frame):
     """Accepted before, but its result was discarded by the fall-through."""
-    assert len(ResearchHandler(csv_path, identity).data) == len(frame)
+    assert len(Pond(csv_path, identity).data) == len(frame)
 
 
 def test_a_dataframe_is_taken_as_given(frame):
-    assert len(ResearchHandler(frame, identity).data) == len(frame)
+    assert len(Pond(frame, identity).data) == len(frame)
 
 
 def test_the_handler_function_is_applied(csv_path):
-    handler = ResearchHandler(csv_path, lambda df: df[df["age"] > 30])
+    handler = Pond(csv_path, lambda df: df[df["age"] > 30])
     assert len(handler.data) == 2
 
 
 def test_no_handler_is_allowed(csv_path, frame):
-    assert len(ResearchHandler(csv_path, None).data) == len(frame)
+    assert len(Pond(csv_path, None).data) == len(frame)
 
 
 # ── the format is inferred, or given ──────────────────────────────────────
@@ -84,21 +84,21 @@ def test_no_handler_is_allowed(csv_path, frame):
 
 def test_the_format_is_inferred_from_the_extension(csv_path, frame):
     """So the documented single-argument call works with no data_format."""
-    assert len(ResearchHandler(csv_path, identity).data) == len(frame)
+    assert len(Pond(csv_path, identity).data) == len(frame)
 
 
 def test_an_explicit_data_format_wins_over_the_extension(tmp_path, frame):
     """A tab-separated file named .dat still loads when told it is txt."""
     path = tmp_path / "data.dat"
     frame.to_csv(path, sep="\t", index=False)
-    handler = ResearchHandler(path, identity, data_format="txt")
+    handler = Pond(path, identity, data_format="txt")
     assert list(handler.data.columns) == list(frame.columns)
 
 
 def test_an_unsupported_format_is_named_and_the_options_listed(tmp_path, capsys):
     path = tmp_path / "data.weird"
     path.write_text("nothing", encoding="utf-8")
-    handler = ResearchHandler(path, identity)
+    handler = Pond(path, identity)
     out = capsys.readouterr().out
     assert handler.data.empty
     assert "weird" in out
@@ -110,7 +110,7 @@ def test_an_unsupported_format_is_named_and_the_options_listed(tmp_path, capsys)
 
 def test_a_missing_file_gives_an_empty_frame_not_none(capsys):
     """Replaces the deleted test_bad_filepath, which asserted None."""
-    handler = ResearchHandler("nonexistent.csv", identity)
+    handler = Pond("nonexistent.csv", identity)
     assert isinstance(handler.data, pd.DataFrame)
     assert handler.data.empty
     assert "nonexistent.csv" in capsys.readouterr().out
@@ -119,7 +119,7 @@ def test_a_missing_file_gives_an_empty_frame_not_none(capsys):
 @pytest.mark.parametrize(
     "operation",
     [
-        lambda handler: handler.create_subset(lambda df: df["age"] > 30),
+        lambda pond: pond.create_pool(lambda df: df["age"] > 30),
         lambda handler: handler.set_dependent("income"),
         lambda handler: handler.add_independents("age"),
         lambda handler: handler.add_controls("age"),
@@ -130,9 +130,9 @@ def test_a_missing_file_gives_an_empty_frame_not_none(capsys):
     ],
 )
 def test_operations_after_a_failed_load_raise_a_named_error(operation):
-    handler = ResearchHandler("nonexistent.csv", identity)
+    handler = Pond("nonexistent.csv", identity)
     with pytest.raises(
-        ResearchHandlerLoadFailedError, match="nonexistent\\.csv"
+        PondLoadFailedError, match="nonexistent\\.csv"
     ) as excinfo:
         operation(handler)
     assert "loading source 'nonexistent.csv' failed" in str(excinfo.value)
@@ -144,7 +144,7 @@ def test_a_raising_handler_gives_an_empty_frame_not_none(csv_path, capsys):
     def bad_clean(df):
         raise ValueError("intentional error")
 
-    handler = ResearchHandler(csv_path, bad_clean)
+    handler = Pond(csv_path, bad_clean)
     assert isinstance(handler.data, pd.DataFrame)
     assert handler.data.empty
     assert "handler function" in capsys.readouterr().out
@@ -154,7 +154,7 @@ def test_a_raising_handler_on_a_dataframe_source_also_degrades(frame, capsys):
     def bad_clean(df):
         raise ValueError("intentional error")
 
-    handler = ResearchHandler(frame, bad_clean)
+    handler = Pond(frame, bad_clean)
     assert handler.data.empty
     assert "handler function" in capsys.readouterr().out
 
@@ -163,7 +163,7 @@ def test_a_successfully_loaded_but_empty_input_is_not_a_failed_load(tmp_path):
     path = tmp_path / "empty.csv"
     pd.DataFrame(columns=["age", "income"]).to_csv(path, index=False)
 
-    handler = ResearchHandler(path, identity)
+    handler = Pond(path, identity)
 
     handler.set_dependent("income")
     handler.add_independents("age")
@@ -176,7 +176,7 @@ def test_a_successfully_loaded_but_empty_input_is_not_a_failed_load(tmp_path):
 
 
 def test_an_unusable_source_type_is_reported(capsys):
-    handler = ResearchHandler(12345, identity)
+    handler = Pond(12345, identity)
     assert handler.data.empty
     assert "Invalid source type" in capsys.readouterr().out
 

@@ -1,7 +1,7 @@
 """
 Random Forest Churn Prediction
 ===============================
-Demonstrates: feature engineering with apply_and_attach,
+Demonstrates: feature engineering with calculate_and_attach,
               z-scoring, log1p transform, safe ratio.
 
 Run: python examples/random_forest_churn.py
@@ -16,7 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
-from otter import ResearchHandler, log1p_transform, safe_ratio, z_score
+from otter import Pond, log1p_transform, safe_ratio, z_score
 
 
 # ---------------------------------------------------------------------------
@@ -77,24 +77,24 @@ def clean(df):
 
 def main():
     csv_path = generate_data()
-    rh = ResearchHandler(csv_path, clean)
+    pond = Pond(csv_path, clean)
 
     # Feature engineering
-    rh.apply_and_attach(
+    pond.calculate_and_attach(
         ["revenue", "visits"], safe_ratio("revenue", "visits"), "rev_per_visit"
     )
-    rh.normalize_and_attach("tenure", z_score, "tenure_z")
-    rh.normalize_and_attach("support_tickets", log1p_transform, "log_tickets")
+    pond.normalize_and_attach("tenure", z_score, "tenure_z")
+    pond.normalize_and_attach("support_tickets", log1p_transform, "log_tickets")
 
     # Set up model variables
-    rh.set_dependent("churned")
-    rh.add_independents("rev_per_visit", "tenure_z", "log_tickets")
-    rh.add_controls("gender_code", "region_code")
+    pond.set_dependent("churned")
+    pond.add_independents("rev_per_visit", "tenure_z", "log_tickets")
+    pond.add_controls("gender_code", "region_code")
 
-    X = rh.get_X()
+    X = pond.get_X()
     assert X is not None, "No independent variables set"
     X = X.fillna(0)
-    y = rh.get_y()
+    y = pond.get_y()
 
     # Train/test split
     X_train, X_test, y_train, y_test = train_test_split(

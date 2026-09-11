@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
-from otter import ResearchHandler, log_transform, mean_center, square
+from otter import Pond, log_transform, mean_center, square
 
 
 # ---------------------------------------------------------------------------
@@ -73,25 +73,27 @@ def clean(df):
 
 def main():
     csv_path = generate_data()
-    rh = ResearchHandler(csv_path, clean)
+    pond = Pond(csv_path, clean)
 
     # Transform variables
-    rh.normalize_and_attach("wage", log_transform, "log_wage")
-    rh.normalize_and_attach("experience", mean_center, "exp_centered")
-    if rh.data:
-        rh.attach("exp_centered_sq", square(rh.data["exp_centered"]))
+    pond.normalize_and_attach("wage", log_transform, "log_wage")
+    pond.normalize_and_attach("experience", mean_center, "exp_centered")
+    # `if pond.data:` raises: a DataFrame has no truth value. A failed load
+    # gives an EMPTY frame rather than None, so emptiness is the real check.
+    if not pond.data.empty:
+        pond.attach("exp_centered_sq", square(pond.data["exp_centered"]))
 
     # Specification 1: Full sample
     print("\n" + "=" * 60)
     print("SPECIFICATION 1: Full Sample Mincer Equation")
     print("=" * 60)
 
-    rh.set_dependent("log_wage")
-    rh.add_independents("education", "exp_centered", "exp_centered_sq")
-    rh.add_controls("female")
+    pond.set_dependent("log_wage")
+    pond.add_independents("education", "exp_centered", "exp_centered_sq")
+    pond.add_controls("female")
 
-    X = sm.add_constant(rh.get_X())
-    y = rh.get_y()
+    X = sm.add_constant(pond.get_X())
+    y = pond.get_y()
 
     model1 = sm.OLS(y, X).fit()
     print(model1.summary())
@@ -101,14 +103,14 @@ def main():
     print("SPECIFICATION 2: Women Only")
     print("=" * 60)
 
-    rh.clear_caches()
-    rh.create_subset(lambda df: df["female"] == 1)
+    pond.clear_caches()
+    pond.create_pool(lambda df: df["female"] == 1)
 
-    rh.set_dependent("log_wage", full=False)
-    rh.add_independents("education", "exp_centered", "exp_centered_sq", full=False)
+    pond.set_dependent("log_wage", full=False)
+    pond.add_independents("education", "exp_centered", "exp_centered_sq", full=False)
 
-    X2 = sm.add_constant(rh.get_X())
-    y2 = rh.get_y()
+    X2 = sm.add_constant(pond.get_X())
+    y2 = pond.get_y()
 
     model2 = sm.OLS(y2, X2).fit()
     print(model2.summary())

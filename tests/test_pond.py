@@ -1,7 +1,7 @@
 """
-Tests for ResearchHandler and transforms.
+Tests for Pond and transforms.
 
-Run with: pytest tests/test_handler.py -v
+Run with: pytest tests/test_pond.py -v
 """
 
 import tempfile
@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from otter import ResearchHandler
+from otter import Pond
 from otter.transforms import (
     mean_center,
     z_score,
@@ -59,9 +59,9 @@ def identity(df):
 
 
 @pytest.fixture
-def rh(sample_csv):
-    """Return a ResearchHandler loaded with sample data."""
-    return ResearchHandler(sample_csv, identity)
+def pond(sample_csv):
+    """Return a Pond loaded with sample data."""
+    return Pond(sample_csv, identity)
 
 
 # ---------------------------------------------------------------------------
@@ -70,11 +70,11 @@ def rh(sample_csv):
 
 
 class TestInit:
-    def test_loads_data(self, rh):
-        assert rh.data is not None
-        assert len(rh.data) == 100
+    def test_loads_data(self, pond):
+        assert pond.data is not None
+        assert len(pond.data) == 100
 
-    def test_columns_present(self, rh):
+    def test_columns_present(self, pond):
         expected = {
             "age",
             "education",
@@ -84,13 +84,13 @@ class TestInit:
             "employed",
             "region",
         }
-        assert expected.issubset(set(rh.data.columns))
+        assert expected.issubset(set(pond.data.columns))
 
-    def test_caches_initialized(self, rh):
-        assert rh.subset is None
-        assert rh.dependent is None
-        assert rh.independents == []
-        assert rh.controls == []
+    def test_caches_initialized(self, pond):
+        assert pond.pool is None
+        assert pond.dependent is None
+        assert pond.independents == []
+        assert pond.controls == []
 
     # Deleted 2026-08-28: test_bad_filepath and test_bad_cleaning_function both
     # asserted `handler.data is None`, which is a dead contract. `_load` returns
@@ -104,22 +104,22 @@ class TestInit:
 
 
 class TestSubset:
-    def test_create_subset(self, rh):
-        rh.create_subset(lambda df: df["age"] > 30)
-        assert rh.subset is not None
-        assert all(rh.subset["age"] > 30)
+    def test_create_pool(self, pond):
+        pond.create_pool(lambda df: df["age"] > 30)
+        assert pond.pool is not None
+        assert all(pond.pool["age"] > 30)
 
-    def test_subset_is_copy(self, rh):
-        rh.create_subset(lambda df: df["age"] > 30)
-        rh.subset["new_col"] = 1
-        assert "new_col" not in rh.data.columns
+    def test_subset_is_copy(self, pond):
+        pond.create_pool(lambda df: df["age"] > 30)
+        pond.pool["new_col"] = 1
+        assert "new_col" not in pond.data.columns
 
-    def test_reset_subset(self, rh):
-        rh.create_subset(lambda df: df["age"] > 30)
-        rh.reset_subset()
-        assert rh.subset is None
+    def test_reset_pool(self, pond):
+        pond.create_pool(lambda df: df["age"] > 30)
+        pond.reset_pool()
+        assert pond.pool is None
 
-    # Deleted 2026-08-28: test_create_subset_no_data asserted that subsetting an
+    # Deleted 2026-08-28: test_create_pool_no_data asserted that subsetting an
     # empty frame does not raise. It does raise KeyError, because the condition
     # references a column that is not there. See the note at the top of
     # test_loader_contract.py: whether the empty-data path should guard is a
@@ -133,52 +133,52 @@ class TestSubset:
 
 
 class TestVariables:
-    def test_set_dependent_full(self, rh):
-        rh.set_dependent("income")
-        assert rh.dependent is not None
-        assert rh.dependent.name == "income"
+    def test_set_dependent_full(self, pond):
+        pond.set_dependent("income")
+        assert pond.dependent is not None
+        assert pond.dependent.name == "income"
 
-    def test_set_dependent_subset(self, rh):
-        rh.create_subset(lambda df: df["employed"] == 1)
-        rh.set_dependent("income", full=False)
-        assert len(rh.dependent) == len(rh.subset)
+    def test_set_dependent_subset(self, pond):
+        pond.create_pool(lambda df: df["employed"] == 1)
+        pond.set_dependent("income", full=False)
+        assert len(pond.dependent) == len(pond.pool)
 
-    def test_add_independents(self, rh):
-        rh.add_independents("age", "education")
-        assert len(rh.independents) == 2
-        assert rh.independents[0].name == "age"
-        assert rh.independents[1].name == "education"
+    def test_add_independents(self, pond):
+        pond.add_independents("age", "education")
+        assert len(pond.independents) == 2
+        assert pond.independents[0].name == "age"
+        assert pond.independents[1].name == "education"
 
-    def test_add_controls(self, rh):
-        rh.add_controls("female", "employed")
-        assert len(rh.controls) == 2
+    def test_add_controls(self, pond):
+        pond.add_controls("female", "employed")
+        assert len(pond.controls) == 2
 
-    def test_get_X(self, rh):
-        rh.add_independents("age", "education")
-        rh.add_controls("female")
-        X = rh.get_X()
+    def test_get_X(self, pond):
+        pond.add_independents("age", "education")
+        pond.add_controls("female")
+        X = pond.get_X()
         assert isinstance(X, pd.DataFrame)
         assert list(X.columns) == ["age", "education", "female"]
 
-    def test_get_X_no_independents(self, rh):
-        assert rh.get_X() is None
+    def test_get_X_no_independents(self, pond):
+        assert pond.get_X() is None
 
-    def test_get_y(self, rh):
-        rh.set_dependent("income")
-        y = rh.get_y()
+    def test_get_y(self, pond):
+        pond.set_dependent("income")
+        y = pond.get_y()
         assert isinstance(y, pd.Series)
 
-    def test_get_y_not_set(self, rh):
-        assert rh.get_y() is None
+    def test_get_y_not_set(self, pond):
+        assert pond.get_y() is None
 
-    def test_clear_caches(self, rh):
-        rh.set_dependent("income")
-        rh.add_independents("age")
-        rh.add_controls("female")
-        rh.clear_caches()
-        assert rh.dependent is None
-        assert rh.independents == []
-        assert rh.controls == []
+    def test_clear_caches(self, pond):
+        pond.set_dependent("income")
+        pond.add_independents("age")
+        pond.add_controls("female")
+        pond.clear_caches()
+        assert pond.dependent is None
+        assert pond.independents == []
+        assert pond.controls == []
 
 
 # ---------------------------------------------------------------------------
@@ -187,31 +187,31 @@ class TestVariables:
 
 
 class TestAttach:
-    def test_attach_to_full(self, rh):
-        rh.attach("income_sq", rh.data["income"] ** 2)
-        assert "income_sq" in rh.data.columns
+    def test_attach_to_full(self, pond):
+        pond.attach("income_sq", pond.data["income"] ** 2)
+        assert "income_sq" in pond.data.columns
 
-    def test_attach_to_subset(self, rh):
-        rh.create_subset(lambda df: df["age"] > 30)
-        rh.attach("flag", pd.Series(1, index=rh.subset.index), to_full=False)
-        assert "flag" in rh.subset.columns
+    def test_attach_to_subset(self, pond):
+        pond.create_pool(lambda df: df["age"] > 30)
+        pond.attach("flag", pd.Series(1, index=pond.pool.index), to_full=False)
+        assert "flag" in pond.pool.columns
 
-    def test_attach_quiet(self, rh, capsys):
-        rh.attach("test_col", rh.data["age"], quiet=True)
+    def test_attach_quiet(self, pond, capsys):
+        pond.attach("test_col", pond.data["age"], quiet=True)
         captured = capsys.readouterr()
         assert "Attached" not in captured.out
 
-    def test_normalize_and_attach_log(self, rh):
-        rh.normalize_and_attach("income", np.log, "log_income")
-        assert "log_income" in rh.data.columns
+    def test_normalize_and_attach_log(self, pond):
+        pond.normalize_and_attach("income", np.log, "log_income")
+        assert "log_income" in pond.data.columns
         np.testing.assert_array_almost_equal(
-            rh.data["log_income"].values, np.log(rh.data["income"].values)
+            pond.data["log_income"].values, np.log(pond.data["income"].values)
         )
 
-    def test_normalize_and_attach_zscore(self, rh):
-        rh.normalize_and_attach("age", z_score, "age_z")
-        assert abs(rh.data["age_z"].mean()) < 1e-10
-        assert abs(rh.data["age_z"].std() - 1.0) < 0.05
+    def test_normalize_and_attach_zscore(self, pond):
+        pond.normalize_and_attach("age", z_score, "age_z")
+        assert abs(pond.data["age_z"].mean()) < 1e-10
+        assert abs(pond.data["age_z"].std() - 1.0) < 0.05
 
     # Deleted 2026-08-28: two tests exercised `apply_and_attach`, a method this
     # class does not have. It exists on another machine's renamed API, which is
@@ -235,12 +235,12 @@ class TestGuards:
     # empty-data guard question is recorded in test_loader_contract.py rather
     # than asserted here in either direction.
 
-    def test_set_dependent_subset_when_none(self, rh):
-        rh.set_dependent("income", full=False)  # subset is None
-        assert rh.dependent is None
+    def test_set_dependent_subset_when_none(self, pond):
+        pond.set_dependent("income", full=False)  # subset is None
+        assert pond.dependent is None
 
     def test_attach_no_data(self):
-        handler = ResearchHandler("nonexistent.csv", identity)
+        handler = Pond("nonexistent.csv", identity)
         handler.attach("test", pd.Series([1, 2, 3]))  # should not raise
 
 
