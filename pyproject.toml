@@ -1,14 +1,17 @@
 [build-system]
-requires = ["setuptools>=68"]
+# 77 is the floor for the SPDX string form of `license` below. The TOML-table
+# form it replaced is deprecated and stops building after 2027-02-18.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "research-framework"
+name = "otter"
 version = "0.1.0"
 description = "A lightweight pandas-based framework for research workflows: dataset management with tracked model specifications, reusable column transforms, and a Monte Carlo simulation module for uncertainty analysis."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Ian Solberg" }]
 dependencies = [
     "pandas>=1.5",

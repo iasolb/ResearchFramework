@@ -1,10 +1,14 @@
-# Research Framework
+# otter
 
 A lightweight pandas-based framework for research workflows. It manages
 datasets and working subsets, tracks dependent/independent/control
 variables, provides clean interfaces for transforming columns, and includes
-a full Monte Carlo simulation module for uncertainty analysis. Installs as
-`research-framework`.
+a full Monte Carlo simulation module for uncertainty analysis. Installs and
+imports as `otter`.
+
+> **Name clash, known and accepted.** `otter-grader`, the Berkeley
+> autograder, also ships a top-level `otter` package. The two cannot share an
+> environment. Use a separate virtualenv if you need both.
 
 ## Installation
 
@@ -42,8 +46,8 @@ pip install -r requirements.txt
 
 ```python
 import numpy as np
-from research_framework import ResearchHandler
-from research_framework import mean_center, log_transform, z_score
+from otter import ResearchHandler
+from otter import mean_center, log_transform, z_score
 
 def clean(df):
     df.columns = df.columns.str.lower().str.strip()
@@ -83,8 +87,8 @@ infers the correlation structure, and returns a ready-to-run simulation,
 no manual wiring needed.
 
 ```python
-from research_framework import ResearchHandler
-from research_framework import Simulation
+from otter import ResearchHandler
+from otter import Simulation
 
 rh = ResearchHandler("labor_data.csv", clean)
 rh.normalize_and_attach("income", log_transform, "log_income")
@@ -149,13 +153,13 @@ The rest of this file is the full API reference and design notes.
 ## Repository Structure
 
 ```
-ResearchFramework/
+otter/
 ├── pyproject.toml         # Package metadata (pip install .)
 ├── requirements.txt       # Dependencies (core + optional)
 ├── LICENSE                # MIT
 ├── .gitignore
 ├── README.md
-├── src/research_framework/
+├── src/otter/
 │   ├── __init__.py        # public API re-exports
 │   ├── rh.py              # Core data handling class + ModelSpec
 │   ├── transforms.py      # Reusable single- and multi-column transforms
@@ -282,7 +286,7 @@ Carlo simulation.
 Attaches a precomputed Series to the full dataset or subset.
 
 ```python
-from research_framework import square
+from otter import square
 
 rh.attach("age_sq", square(rh.data["age"]))
 rh.attach("age_sq", square(rh.subset["age"]), to_full=False)
@@ -293,7 +297,7 @@ rh.attach("age_sq", square(rh.subset["age"]), to_full=False)
 Applies a single-column transformation and attaches the result.
 
 ```python
-from research_framework import log_transform, z_score, mean_center, min_max_scale
+from otter import log_transform, z_score, mean_center, min_max_scale
 
 rh.normalize_and_attach("income", log_transform, "log_income")
 rh.normalize_and_attach("gpa", z_score, "gpa_z")
@@ -308,7 +312,7 @@ Applies a multi-column transformation and attaches the result. The function
 receives a DataFrame subset of the specified columns.
 
 ```python
-from research_framework import interaction, row_mean, row_sum, safe_ratio
+from otter import interaction, row_mean, row_sum, safe_ratio
 
 rh.calculate_and_attach(["education", "experience"], interaction, "edu_x_exp")
 rh.calculate_and_attach(["math", "reading", "science"], row_mean, "avg_score")
@@ -556,7 +560,7 @@ Define named scenarios with distribution parameter overrides, then compare
 outcomes against baseline:
 
 ```python
-from research_framework import Scenario
+from otter import Scenario
 
 scenarios = [
     Scenario("bull_market", overrides={
@@ -637,7 +641,7 @@ squared term.
 ```python
 import numpy as np
 import statsmodels.api as sm
-from research_framework import ResearchHandler, log_transform, mean_center, square
+from otter import ResearchHandler, log_transform, mean_center, square
 
 def clean(df):
     df.columns = df.columns.str.lower()
@@ -669,7 +673,7 @@ Predicting customer churn with engineered features and standardized inputs.
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
-from research_framework import ResearchHandler, z_score, log1p_transform, safe_ratio
+from otter import ResearchHandler, z_score, log1p_transform, safe_ratio
 
 rh = ResearchHandler("customer_data.csv", clean)
 
@@ -697,7 +701,7 @@ Correct for selection bias in observed wages using the inverse Mills ratio.
 ```python
 import statsmodels.api as sm
 from scipy.stats import norm
-from research_framework import ResearchHandler, mean_center, log_transform
+from otter import ResearchHandler, mean_center, log_transform
 
 rh = ResearchHandler("labor_survey.csv", clean)
 rh.normalize_and_attach("age", mean_center, "age_centered")
@@ -729,7 +733,7 @@ Simulate a VC portfolio's 3-year value under uncertainty about growth,
 churn, market multiples, and discount rates.
 
 ```python
-from research_framework import Simulation, DistributionSpec, Scenario
+from otter import Simulation, DistributionSpec, Scenario
 
 def portfolio_value(row):
     base_arr = 33.0 * 12

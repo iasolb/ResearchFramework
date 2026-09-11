@@ -20,7 +20,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from research_framework import (
+from otter import (
     ConvergenceDiagnostics,
     DistributionSpec,
     InputManager,
@@ -32,7 +32,7 @@ from research_framework import (
     SimulationResult,
     Scenario,
 )
-from research_framework.simulation import ScenarioComparator
+from otter.simulation import ScenarioComparator
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "startup_portfolio.csv")
 

@@ -9,12 +9,12 @@ plotly API shifts, but not if styling changes.
 import pytest
 import plotly.graph_objects as go
 
-from research_framework.simulation import (
+from otter.simulation import (
     DistributionSpec,
     Scenario,
     Simulation,
 )
-from research_framework.plotter import SimulationPlotter
+from otter.plotter import SimulationPlotter
 
 
 # ── Shared fixture ─────────────────────────────────────────────────────────

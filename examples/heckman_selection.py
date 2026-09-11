@@ -16,7 +16,7 @@ import pandas as pd
 import statsmodels.api as sm
 from scipy.stats import norm
 
-from research_framework import ResearchHandler, log_transform, mean_center
+from otter import ResearchHandler, log_transform, mean_center
 
 
 # ---------------------------------------------------------------------------
