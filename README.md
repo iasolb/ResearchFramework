@@ -166,15 +166,15 @@ python examples/monte_carlo_test.py
 From the repo root:
 
 ```bash
-pytest tests/test_handler.py -v
+pytest tests/test_pond.py -v
 ```
 
 The test suite covers the full `Pond` class and every function in
 `transforms.py`, using synthetic data with no external dependencies.
 
 ```bash
-pytest tests/test_handler.py::TestSubset -v
-pytest tests/test_handler.py::TestTransforms::test_z_score -v
+pytest tests/test_pond.py::TestSubset -v
+pytest tests/test_pond.py::TestTransforms::test_z_score -v
 ```
 
 ## Start here
@@ -205,14 +205,15 @@ otter/
 │   ├── simulation.py      # Monte Carlo simulation module
 │   └── plotter.py         # Plotly plotting for simulation results
 ├── tests/
-│   └── test_handler.py    # pytest suite with synthetic data
+│   ├── test_pond.py       # Pond and transforms, on synthetic data
+│   └── test_experiment.py # design, assignment, lift, CUPED, balance
 └── examples/
     ├── data/
-    │   └── startup_portfolio.csv      # Sample portfolio dataset
+    │   └── startup_portfolio.csv      # generated on first run, not committed
     ├── ols_mincer.py                  # OLS Mincer wage equation
     ├── random_forest_churn.py         # Random forest churn prediction
     ├── heckman_selection.py           # Heckman two-step selection model
-    └── monte_carlo_portfolio.py       # Monte Carlo portfolio valuation
+    └── monte_carlo_test.py            # Monte Carlo portfolio valuation
 ```
 
 ## Pond API
