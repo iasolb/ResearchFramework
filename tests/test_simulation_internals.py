@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from otter.rh import ModelSpec
+from otter.pond import ModelSpec
 from otter.simulation import (
     _DISTRIBUTION_REGISTRY,
     ConvergenceDiagnostics,

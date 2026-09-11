@@ -10,6 +10,12 @@ imports as `otter`.
 > autograder, also ships a top-level `otter` package. The two cannot share an
 > environment. Use a separate virtualenv if you need both.
 
+**The vocabulary.** A **`Pond`** holds your dataset and tracks which columns
+are dependent, independent and control. A **pool** is a working subset you
+carve off it with `create_pool()`, and every variable call takes `full=True`
+or `full=False` to say which one it reads from. Note `Pool` here is a pandas
+subset, not `multiprocessing.Pool`.
+
 ## Installation
 
 Core dependencies:
@@ -46,7 +52,7 @@ pip install -r requirements.txt
 
 ```python
 import numpy as np
-from otter import ResearchHandler
+from otter import Pond
 from otter import mean_center, log_transform, z_score
 
 def clean(df):
@@ -56,26 +62,26 @@ def clean(df):
     return df
 
 # Initialize from a CSV with a cleaning function
-rh = ResearchHandler("survey_data.csv", clean)
+pond = Pond("survey_data.csv", clean)
 
 # Transform with named functions from transforms.py
-rh.normalize_and_attach("income", log_transform, "log_income")
-rh.normalize_and_attach("age", mean_center, "age_centered")
+pond.normalize_and_attach("income", log_transform, "log_income")
+pond.normalize_and_attach("age", mean_center, "age_centered")
 
 # Create a working subset
-rh.create_subset(lambda df: (df["age"] >= 18) & (df["employed"] == 1))
+pond.create_pool(lambda df: (df["age"] >= 18) & (df["employed"] == 1))
 
 # Set up variables from the subset
-rh.set_dependent("log_income", full=False)
-rh.add_independents("age_centered", "education", full=False)
-rh.add_controls("female", full=False)
+pond.set_dependent("log_income", full=False)
+pond.add_independents("age_centered", "education", full=False)
+pond.add_controls("female", full=False)
 
 # Retrieve design matrix and outcome vector
-X = rh.get_X()
-y = rh.get_y()
+X = pond.get_X()
+y = pond.get_y()
 
 # Or get a frozen snapshot with full metadata
-spec = rh.get_spec()
+spec = pond.get_spec()
 ```
 
 ## Simulation module
@@ -87,16 +93,16 @@ infers the correlation structure, and returns a ready-to-run simulation,
 no manual wiring needed.
 
 ```python
-from otter import ResearchHandler
+from otter import Pond
 from otter import Simulation
 
-rh = ResearchHandler("labor_data.csv", clean)
-rh.normalize_and_attach("income", log_transform, "log_income")
-rh.set_dependent("log_income")
-rh.add_independents("education", "experience")
-rh.add_controls("female")
+pond = Pond("labor_data.csv", clean)
+pond.normalize_and_attach("income", log_transform, "log_income")
+pond.set_dependent("log_income")
+pond.add_independents("education", "experience")
+pond.add_controls("female")
 
-spec = rh.get_spec()
+spec = pond.get_spec()
 
 sim = Simulation.from_spec(
     spec,
@@ -110,6 +116,38 @@ result = sim.run()
 The module also covers sensitivity analysis (tornado, one-at-a-time, Sobol
 indices), named scenario comparison, convergence diagnostics, and plotting.
 Full API below.
+
+## Experiment module
+
+Sizing an experiment before it runs, and measuring it after.
+
+```python
+from otter.experiment import sample_size_for_mean, assign_groups, compare_groups
+
+# How many units to detect a 2% lift on a metric averaging 120, sd 300?
+size = sample_size_for_mean(baseline_mean=120, baseline_sd=300, min_lift_pct=2)
+size.treatment_n, size.control_n, size.total_n
+
+# Randomise reproducibly, then measure.
+assign_groups(user_ids, {"control": 0.5, "treatment": 0.5}, seed=1)
+compare_groups(data, group_col="group", metric_cols=["revenue", "orders"],
+               control="control", treatment="treatment")
+```
+
+Comparisons use Welch's t-test (unequal variances are handled, not assumed
+away) with Benjamini-Hochberg correction across metrics. Two things worth
+knowing:
+
+- **`cuped_pre=` reduces variance** using a pre-period covariate, so the same
+  sample detects a smaller effect. The covariate must be measured before
+  assignment.
+- **`pretest_balance()` checks the randomisation actually worked** by testing
+  the pre-period metrics. A pre-period that is empty (new units, no history)
+  is reported as uninformative rather than tested, because a degenerate
+  t-test returns a confident answer built on nothing.
+
+`detectable_lift_for_mean()` and `detectable_lift_for_proportion()` run the
+other direction: the sample is fixed, so what can it actually see?
 
 ## Example Workflows
 
@@ -131,7 +169,7 @@ From the repo root:
 pytest tests/test_handler.py -v
 ```
 
-The test suite covers the full `ResearchHandler` class and every function in
+The test suite covers the full `Pond` class and every function in
 `transforms.py`, using synthetic data with no external dependencies.
 
 ```bash
@@ -161,7 +199,8 @@ otter/
 ├── README.md
 ├── src/otter/
 │   ├── __init__.py        # public API re-exports
-│   ├── rh.py              # Core data handling class + ModelSpec
+│   ├── pond.py              # Core data handling class + ModelSpec
+│   ├── experiment.py      # Power, assignment, lift, CUPED, balance checks
 │   ├── transforms.py      # Reusable single- and multi-column transforms
 │   ├── simulation.py      # Monte Carlo simulation module
 │   └── plotter.py         # Plotly plotting for simulation results
@@ -176,9 +215,9 @@ otter/
     └── monte_carlo_portfolio.py       # Monte Carlo portfolio valuation
 ```
 
-## ResearchHandler API
+## Pond API
 
-### `ResearchHandler(source, handler=None, *, shapefile=False)`
+### `Pond(source, handler=None, *, shapefile=False)`
 
 Constructor. Accepts a CSV filepath, shapefile path, DataFrame, or
 GeoDataFrame. The optional `handler` function transforms the data after
@@ -192,34 +231,34 @@ def clean(df):
     df = df.drop_duplicates()
     return df.dropna()
 
-rh = ResearchHandler("data.csv", clean)
+pond = Pond("data.csv", clean)
 
 # From a CSV without cleaning
-rh = ResearchHandler("data.csv")
+pond = Pond("data.csv")
 
 # From a shapefile
-rh = ResearchHandler("regions.shp", shapefile=True)
+pond = Pond("regions.shp", shapefile=True)
 
 # From an existing DataFrame or GeoDataFrame
-rh = ResearchHandler(existing_df)
-rh = ResearchHandler(existing_df, clean)
+pond = Pond(existing_df)
+pond = Pond(existing_df, clean)
 ```
 
 The `handler` function receives a `pd.DataFrame` (or `gpd.GeoDataFrame` for
 shapefiles) and must return one. If the source type is unsupported, a
 `TypeError` is raised. The `shapefile` parameter is keyword-only.
 
-### `create_subset(condition)`
+### `create_pool(condition)`
 
 Creates a working subset of the full dataset based on a boolean condition.
 
 ```python
-rh.create_subset(lambda df: df["age"] > 30)
-rh.create_subset(lambda df: (df["income"] > 20000) & (df["employed"] == 1))
-rh.create_subset(lambda df: df["country"].isin(["US", "UK", "CA"]))
+pond.create_pool(lambda df: df["age"] > 30)
+pond.create_pool(lambda df: (df["income"] > 20000) & (df["employed"] == 1))
+pond.create_pool(lambda df: df["country"].isin(["US", "UK", "CA"]))
 ```
 
-### `reset_subset()`
+### `reset_pool()`
 
 Clears the working subset back to `None`.
 
@@ -229,8 +268,8 @@ Sets the dependent (outcome) variable. Locks the source mode (see Design
 Notes).
 
 ```python
-rh.set_dependent("log_income")
-rh.set_dependent("log_income", full=False)
+pond.set_dependent("log_income")
+pond.set_dependent("log_income", full=False)
 ```
 
 ### `add_independents(*cols, full=True)`
@@ -238,8 +277,8 @@ rh.set_dependent("log_income", full=False)
 Adds one or more independent (predictor) variables.
 
 ```python
-rh.add_independents("education", "experience", "tenure")
-rh.add_independents("education", "experience", full=False)
+pond.add_independents("education", "experience", "tenure")
+pond.add_independents("education", "experience", full=False)
 ```
 
 ### `add_controls(*cols, full=True)`
@@ -247,8 +286,8 @@ rh.add_independents("education", "experience", full=False)
 Adds one or more control variables.
 
 ```python
-rh.add_controls("female", "married", "region_code")
-rh.add_controls("female", "married", full=False)
+pond.add_controls("female", "married", "region_code")
+pond.add_controls("female", "married", full=False)
 ```
 
 ### `get_X()` / `get_y()`
@@ -263,7 +302,7 @@ Contains copies of the design matrix, dependent variable, column name
 metadata, and the source DataFrame. Nothing mutates after creation.
 
 ```python
-spec = rh.get_spec()
+spec = pond.get_spec()
 
 spec.X              # DataFrame: same as get_X()
 spec.y              # Series: same as get_y()
@@ -277,7 +316,7 @@ spec.n              # number of observations
 spec.data           # copy of the source DataFrame (for distribution fitting)
 ```
 
-`ModelSpec` is the bridge between `ResearchHandler` and the simulation
+`ModelSpec` is the bridge between `Pond` and the simulation
 module: pass it to `Simulation.from_spec()` to build a data-driven Monte
 Carlo simulation.
 
@@ -288,8 +327,8 @@ Attaches a precomputed Series to the full dataset or subset.
 ```python
 from otter import square
 
-rh.attach("age_sq", square(rh.data["age"]))
-rh.attach("age_sq", square(rh.subset["age"]), to_full=False)
+pond.attach("age_sq", square(pond.data["age"]))
+pond.attach("age_sq", square(pond.pool["age"]), to_full=False)
 ```
 
 ### `normalize_and_attach(source_col, normalizing_function, new_colname, full=True)`
@@ -299,11 +338,11 @@ Applies a single-column transformation and attaches the result.
 ```python
 from otter import log_transform, z_score, mean_center, min_max_scale
 
-rh.normalize_and_attach("income", log_transform, "log_income")
-rh.normalize_and_attach("gpa", z_score, "gpa_z")
-rh.normalize_and_attach("age", mean_center, "age_centered")
-rh.normalize_and_attach("score", min_max_scale, "score_scaled")
-rh.normalize_and_attach("wage", log_transform, "log_wage", full=False)
+pond.normalize_and_attach("income", log_transform, "log_income")
+pond.normalize_and_attach("gpa", z_score, "gpa_z")
+pond.normalize_and_attach("age", mean_center, "age_centered")
+pond.normalize_and_attach("score", min_max_scale, "score_scaled")
+pond.normalize_and_attach("wage", log_transform, "log_wage", full=False)
 ```
 
 ### `calculate_and_attach(source_cols, func, new_colname, full=True)`
@@ -314,10 +353,10 @@ receives a DataFrame subset of the specified columns.
 ```python
 from otter import interaction, row_mean, row_sum, safe_ratio
 
-rh.calculate_and_attach(["education", "experience"], interaction, "edu_x_exp")
-rh.calculate_and_attach(["math", "reading", "science"], row_mean, "avg_score")
-rh.calculate_and_attach(["q1", "q2", "q3", "q4"], row_sum, "annual_total")
-rh.calculate_and_attach(
+pond.calculate_and_attach(["education", "experience"], interaction, "edu_x_exp")
+pond.calculate_and_attach(["math", "reading", "science"], row_mean, "avg_score")
+pond.calculate_and_attach(["q1", "q2", "q3", "q4"], row_sum, "annual_total")
+pond.calculate_and_attach(
     ["revenue", "visits"],
     safe_ratio("revenue", "visits"),
     "rev_per_visit",
@@ -341,20 +380,20 @@ For use with `normalize_and_attach`:
 
 | Function | Description | Example |
 |----------|-------------|---------|
-| `mean_center` | `x - mean(x)` | `rh.normalize_and_attach("age", mean_center, "age_c")` |
-| `z_score` | `(x - mean) / std` | `rh.normalize_and_attach("gpa", z_score, "gpa_z")` |
-| `min_max_scale` | Scale to [0, 1] | `rh.normalize_and_attach("score", min_max_scale, "score_01")` |
-| `log_transform` | `ln(x)` | `rh.normalize_and_attach("income", log_transform, "log_inc")` |
-| `log1p_transform` | `ln(1 + x)`, safe for zeros | `rh.normalize_and_attach("tickets", log1p_transform, "log_tix")` |
-| `square` | `x²` | `rh.normalize_and_attach("exp", square, "exp_sq")` |
-| `rank_transform` | Replace with rank | `rh.normalize_and_attach("score", rank_transform, "score_rank")` |
+| `mean_center` | `x - mean(x)` | `pond.normalize_and_attach("age", mean_center, "age_c")` |
+| `z_score` | `(x - mean) / std` | `pond.normalize_and_attach("gpa", z_score, "gpa_z")` |
+| `min_max_scale` | Scale to [0, 1] | `pond.normalize_and_attach("score", min_max_scale, "score_01")` |
+| `log_transform` | `ln(x)` | `pond.normalize_and_attach("income", log_transform, "log_inc")` |
+| `log1p_transform` | `ln(1 + x)`, safe for zeros | `pond.normalize_and_attach("tickets", log1p_transform, "log_tix")` |
+| `square` | `x²` | `pond.normalize_and_attach("exp", square, "exp_sq")` |
+| `rank_transform` | Replace with rank | `pond.normalize_and_attach("score", rank_transform, "score_rank")` |
 
 ### Factory transforms (return a callable)
 
 | Function | Description | Example |
 |----------|-------------|---------|
-| `winsorize(lower, upper)` | Clip at quantiles | `rh.normalize_and_attach("income", winsorize(0.01, 0.99), "inc_wins")` |
-| `demean_by_group(group_col)` | Subtract group means | `rh.normalize_and_attach("income", demean_by_group(rh.data["industry"]), "inc_dm")` |
+| `winsorize(lower, upper)` | Clip at quantiles | `pond.normalize_and_attach("income", winsorize(0.01, 0.99), "inc_wins")` |
+| `demean_by_group(group_col)` | Subtract group means | `pond.normalize_and_attach("income", demean_by_group(pond.data["industry"]), "inc_dm")` |
 
 ### Multi-column transforms (DataFrame → Series)
 
@@ -362,10 +401,10 @@ For use with `calculate_and_attach`:
 
 | Function | Description | Example |
 |----------|-------------|---------|
-| `interaction` | Product of first two columns | `rh.calculate_and_attach(["edu", "exp"], interaction, "edu_x_exp")` |
-| `row_mean` | Row-wise average | `rh.calculate_and_attach(["m", "r", "s"], row_mean, "avg")` |
-| `row_sum` | Row-wise sum | `rh.calculate_and_attach(["q1", "q2"], row_sum, "total")` |
-| `safe_ratio(num, denom)` | Division, 0 → NaN | `rh.calculate_and_attach(["rev", "vis"], safe_ratio("rev", "vis"), "rpv")` |
+| `interaction` | Product of first two columns | `pond.calculate_and_attach(["edu", "exp"], interaction, "edu_x_exp")` |
+| `row_mean` | Row-wise average | `pond.calculate_and_attach(["m", "r", "s"], row_mean, "avg")` |
+| `row_sum` | Row-wise sum | `pond.calculate_and_attach(["q1", "q2"], row_sum, "total")` |
+| `safe_ratio(num, denom)` | Division, 0 → NaN | `pond.calculate_and_attach(["rev", "vis"], safe_ratio("rev", "vis"), "rpv")` |
 
 ## Simulation Module API
 
@@ -475,7 +514,7 @@ result.to_dataframe()   # draws + outcomes in one exportable DataFrame
 
 Top-level facade that wires everything together. Use this with manual
 `DistributionSpec` lists, or use `Simulation.from_spec()` with a `ModelSpec`
-from `ResearchHandler`.
+from `Pond`.
 
 ```python
 sim = Simulation(
@@ -641,25 +680,25 @@ squared term.
 ```python
 import numpy as np
 import statsmodels.api as sm
-from otter import ResearchHandler, log_transform, mean_center, square
+from otter import Pond, log_transform, mean_center, square
 
 def clean(df):
     df.columns = df.columns.str.lower()
     df["female"] = (df["gender"] == "F").astype(int)
     return df.dropna(subset=["wage", "education", "experience", "age", "gender"])
 
-rh = ResearchHandler("labor_data.csv", clean)
+pond = Pond("labor_data.csv", clean)
 
-rh.normalize_and_attach("wage", log_transform, "log_wage")
-rh.normalize_and_attach("experience", mean_center, "exp_centered")
-rh.attach("exp_centered_sq", square(rh.data["exp_centered"]))
+pond.normalize_and_attach("wage", log_transform, "log_wage")
+pond.normalize_and_attach("experience", mean_center, "exp_centered")
+pond.attach("exp_centered_sq", square(pond.data["exp_centered"]))
 
-rh.set_dependent("log_wage")
-rh.add_independents("education", "exp_centered", "exp_centered_sq")
-rh.add_controls("female")
+pond.set_dependent("log_wage")
+pond.add_independents("education", "exp_centered", "exp_centered_sq")
+pond.add_controls("female")
 
-X = sm.add_constant(rh.get_X())
-y = rh.get_y()
+X = sm.add_constant(pond.get_X())
+y = pond.get_y()
 
 model = sm.OLS(y, X).fit()
 print(model.summary())
@@ -673,20 +712,20 @@ Predicting customer churn with engineered features and standardized inputs.
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
-from otter import ResearchHandler, z_score, log1p_transform, safe_ratio
+from otter import Pond, z_score, log1p_transform, safe_ratio
 
-rh = ResearchHandler("customer_data.csv", clean)
+pond = Pond("customer_data.csv", clean)
 
-rh.calculate_and_attach(["revenue", "visits"], safe_ratio("revenue", "visits"), "rev_per_visit")
-rh.normalize_and_attach("tenure", z_score, "tenure_z")
-rh.normalize_and_attach("support_tickets", log1p_transform, "log_tickets")
+pond.calculate_and_attach(["revenue", "visits"], safe_ratio("revenue", "visits"), "rev_per_visit")
+pond.normalize_and_attach("tenure", z_score, "tenure_z")
+pond.normalize_and_attach("support_tickets", log1p_transform, "log_tickets")
 
-rh.set_dependent("churned")
-rh.add_independents("rev_per_visit", "tenure_z", "log_tickets")
-rh.add_controls("gender_code", "region_code")
+pond.set_dependent("churned")
+pond.add_independents("rev_per_visit", "tenure_z", "log_tickets")
+pond.add_controls("gender_code", "region_code")
 
-X = rh.get_X().fillna(0)
-y = rh.get_y()
+X = pond.get_X().fillna(0)
+y = pond.get_y()
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 rf = RandomForestClassifier(n_estimators=200, random_state=42)
@@ -701,29 +740,29 @@ Correct for selection bias in observed wages using the inverse Mills ratio.
 ```python
 import statsmodels.api as sm
 from scipy.stats import norm
-from otter import ResearchHandler, mean_center, log_transform
+from otter import Pond, mean_center, log_transform
 
-rh = ResearchHandler("labor_survey.csv", clean)
-rh.normalize_and_attach("age", mean_center, "age_centered")
+pond = Pond("labor_survey.csv", clean)
+pond.normalize_and_attach("age", mean_center, "age_centered")
 
 # Step 1: Probit on full sample
-rh.set_dependent("employed")
-rh.add_independents("age_centered", "education")
-rh.add_controls("married", "children")
+pond.set_dependent("employed")
+pond.add_independents("age_centered", "education")
+pond.add_controls("married", "children")
 
-probit = sm.Probit(rh.get_y(), sm.add_constant(rh.get_X())).fit(disp=0)
-rh.attach("imr", norm.pdf(probit.fittedvalues) / norm.cdf(probit.fittedvalues))
+probit = sm.Probit(pond.get_y(), sm.add_constant(pond.get_X())).fit(disp=0)
+pond.attach("imr", norm.pdf(probit.fittedvalues) / norm.cdf(probit.fittedvalues))
 
 # Step 2: OLS on employed subset with IMR correction
-rh.clear_caches()
-rh.create_subset(lambda df: df["employed"] == 1)
-rh.normalize_and_attach("wage", log_transform, "log_wage", full=False)
+pond.clear_caches()
+pond.create_pool(lambda df: df["employed"] == 1)
+pond.normalize_and_attach("wage", log_transform, "log_wage", full=False)
 
-rh.set_dependent("log_wage", full=False)
-rh.add_independents("age_centered", "education", full=False)
-rh.add_controls("imr", full=False)
+pond.set_dependent("log_wage", full=False)
+pond.add_independents("age_centered", "education", full=False)
+pond.add_controls("imr", full=False)
 
-ols = sm.OLS(rh.get_y(), sm.add_constant(rh.get_X())).fit()
+ols = sm.OLS(pond.get_y(), sm.add_constant(pond.get_X())).fit()
 print(ols.summary())
 ```
 
@@ -780,11 +819,11 @@ bare truthiness, which raises `ValueError` on DataFrames), handles both
 `full=True` and `full=False` branches explicitly, and bails early with a
 printed message when the needed dataset isn't available.
 
-**ModelSpec as bridge.** `ResearchHandler` produces a frozen `ModelSpec`
+**ModelSpec as bridge.** `Pond` produces a frozen `ModelSpec`
 dataclass via `get_spec()`. The simulation module consumes it via
 `Simulation.from_spec()`. The dependency flows one direction: `simulation.py`
-can accept a `ModelSpec`, but does not import from `ResearchHandler.py`.
-`ResearchHandler.py` knows nothing about simulations.
+can accept a `ModelSpec`, but does not import from `pond.py`.
+`pond.py` knows nothing about simulations.
 
 **Distribution registry.** `_DISTRIBUTION_REGISTRY` maps string names to
 draw functions, scipy distributions, and parameter translation maps. Adding

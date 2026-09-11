@@ -1,7 +1,7 @@
 """
 VC Portfolio Monte Carlo Simulation
 =====================================
-Demonstrates: full simulation workflow using the simulations module —
+Demonstrates: full simulation workflow using the simulations module -
               distribution fitting from observed data, manual specs,
               correlated draws, scenario comparison, sensitivity
               analysis, convergence diagnostics, and plotting.
@@ -47,15 +47,15 @@ def portfolio_value(row):
     Simplified 3-year forward valuation for a SaaS portfolio.
 
     Inputs (drawn from distributions):
-        revenue_multiple   — market multiple applied to ARR
-        growth_rate        — annualized portfolio revenue growth
-        churn_rate         — annual customer churn (revenue drag)
-        discount_rate      — rate used to discount terminal value
+        revenue_multiple   - market multiple applied to ARR
+        growth_rate        - annualized portfolio revenue growth
+        churn_rate         - annual customer churn (revenue drag)
+        discount_rate      - rate used to discount terminal value
 
     Uses the portfolio's observed median MRR ($33K) as the baseline
     monthly revenue, then projects forward 3 years with growth and churn.
     """
-    base_arr = 33.0 * 12  # median MRR * 12 → baseline ARR ($K)
+    base_arr = 33.0 * 12  # median MRR * 12 -> baseline ARR ($K)
     years = 3
 
     # net growth after churn
@@ -86,7 +86,7 @@ def step_1_fit_from_data():
     # Fit growth and churn from the actual portfolio data
     specs = mgr.fit_from_data(df, ["growth_rate", "churn_rate"], dist_type="normal")
     for spec in specs:
-        print(f"  {spec.name}: {spec.dist_type} → {spec.params}")
+        print(f"  {spec.name}: {spec.dist_type} -> {spec.params}")
 
     # Infer correlation from the observed data
     corr = mgr.infer_correlation_from_data(df)
@@ -153,13 +153,13 @@ def step_3_sensitivity(sim):
     print("=" * 60)
 
     # Tornado chart data
-    print("\n  --- Tornado (10th–90th percentile) ---")
+    print("\n  --- Tornado (10th-90th percentile) ---")
     tornado = sim.sensitivity.tornado()
     for _, row in tornado.iterrows():
         print(
             f"  {row['variable']:>20s}:  "
             f"swing = ${row['swing']:>10,.0f}K  "
-            f"[{row['low_outcome']:>10,.0f} → {row['high_outcome']:>10,.0f}]"
+            f"[{row['low_outcome']:>10,.0f} -> {row['high_outcome']:>10,.0f}]"
         )
 
     # One-at-a-time for the biggest driver
@@ -168,7 +168,7 @@ def step_3_sensitivity(sim):
     oat = sim.sensitivity.one_at_a_time(top_var, n_steps=6)
     for _, row in oat.iterrows():
         print(
-            f"  {top_var} = {row['variable_value']:>8.2f}  →  ${row['outcome']:>10,.0f}K"
+            f"  {top_var} = {row['variable_value']:>8.2f}  ->  ${row['outcome']:>10,.0f}K"
         )
 
     # Sobol indices (smaller n for speed in example)
@@ -177,7 +177,7 @@ def step_3_sensitivity(sim):
     for _, row in sobol.iterrows():
         print(
             f"  {row['variable']:>20s}:  S1 = {row['S1']:.3f}  "
-            f"(±{row['S1_conf']:.3f})"
+            f"(+/-{row['S1_conf']:.3f})"
         )
 
     return tornado
@@ -296,11 +296,22 @@ def step_7_plots(sim, result, tornado_data, scenarios):
     print("STEP 7: GENERATING PLOTS")
     print("=" * 60)
 
-    import matplotlib
+    # matplotlib is NOT a declared dependency of otter (the package ships
+    # plotly), so this step is optional rather than fatal. It used to raise
+    # ModuleNotFoundError and take the whole example down at the last step,
+    # after six steps of real output had already succeeded.
+    try:
+        import matplotlib
+    except ImportError:
+        print("  SKIPPED: matplotlib is not installed, and it is not a")
+        print("  dependency of otter. Install it to write the plots:")
+        print("      pip install matplotlib")
+        return
 
     matplotlib.use("Agg")
 
     out_dir = os.path.join(os.path.dirname(__file__), "output_images")
+    os.makedirs(out_dir, exist_ok=True)
 
     fig = sim.plot.histogram(result)
     path = os.path.join(out_dir, "histogram.png")
@@ -334,7 +345,37 @@ def step_7_plots(sim, result, tornado_data, scenarios):
 # ---------------------------------------------------------------------------
 
 
+def ensure_data():
+    """Write the portfolio CSV if it is not there.
+
+    The README promises every example generates its own data and runs on a
+    fresh clone. This one read a file that was never committed, so it failed
+    immediately with a FileNotFoundError. Growth and churn are drawn
+    correlated on purpose, because step 1 infers a correlation matrix from
+    them and independent columns would make that step demonstrate nothing.
+    """
+    if os.path.exists(DATA_PATH):
+        return
+    os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
+    rng = np.random.default_rng(42)
+    n = 240
+    growth = rng.normal(0.22, 0.09, n)
+    # faster-growing companies churn a little less, so the two are negatively
+    # correlated rather than independent
+    churn = np.clip(0.09 - 0.18 * (growth - 0.22) + rng.normal(0, 0.02, n), 0.005, None)
+    pd.DataFrame(
+        {
+            "company_id": [f"co_{i:03d}" for i in range(n)],
+            "mrr": rng.lognormal(np.log(33.0), 0.8, n).round(1),
+            "growth_rate": growth.round(4),
+            "churn_rate": churn.round(4),
+        }
+    ).to_csv(DATA_PATH, index=False)
+    print(f"Generated synthetic portfolio data: {DATA_PATH}")
+
+
 def main():
+    ensure_data()
     fitted_specs = step_1_fit_from_data()
     sim, result = step_2_run_simulation()
     tornado_data = step_3_sensitivity(sim)
@@ -344,7 +385,7 @@ def main():
     step_7_plots(sim, result, tornado_data, scenarios)
 
     print("\n" + "=" * 60)
-    print("DONE — all steps completed successfully.")
+    print("DONE - all steps completed successfully.")
     print("=" * 60)
 
 

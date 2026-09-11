@@ -1,4 +1,4 @@
-"""ResearchHandler - Supports data assignment and model customization"""
+"""Pond - Supports data assignment and model customization"""
 
 import pandas as pd
 from typing import Optional, Callable, Any
@@ -12,8 +12,8 @@ import pickle
 @dataclass(frozen=True)
 class ModelSpec:
     """
-    Frozen snapshot of a ResearchHandler's variable specification.
-    Produced by rh.get_spec(). Can be passed to Simulation.from_spec()
+    Frozen snapshot of a Pond's variable specification.
+    Produced by pond.get_spec(). Can be passed to Simulation.from_spec()
     to build a data-driven Monte Carlo simulation.
 
     Attributes:
@@ -22,7 +22,7 @@ class ModelSpec:
         independents:  tuple of independent variable column names
         controls:      tuple of control variable column names
         dependent:     dependent variable column name (None if not set)
-        source_label:  "full" or "subset" — which dataset the variables came from
+        source_label:  "full" or "pool" — which dataset the variables came from
         n:             number of observations
         data:          copy of the source DataFrame (for distribution fitting)
     """
@@ -58,7 +58,7 @@ class ModelSpec:
         )
 
 
-class ResearchHandlerLoadFailedError(RuntimeError):
+class PondLoadFailedError(RuntimeError):
     """Raised when an operation is attempted after a handler load failed."""
 
 
@@ -154,7 +154,7 @@ _LOADER_REG = {
 }
 
 
-class ResearchHandler:
+class Pond:
     def __init__(
         self,
         source: Path | pd.DataFrame | gpd.GeoDataFrame,
@@ -168,20 +168,20 @@ class ResearchHandler:
             data_format: if specified, overrides the inferred format from the file extension
 
         Examples:
-            ResearchHandler("data.csv")
-            ResearchHandler("data.csv", lambda df: df.dropna())
-            ResearchHandler("regions.shp", data_format="shp")
-            ResearchHandler(existing_df)
+            Pond("data.csv")
+            Pond("data.csv", lambda df: df.dropna())
+            Pond("regions.shp", data_format="shp")
+            Pond(existing_df)
         """
         self.data, self._load_failed, self._failed_source = self._load(
             source, handler, data_format
         )
-        self.subset = None
+        self.pool = None
         self.dependent = None
         self.independents = []
         self.controls = []
         self._source_mode: Optional[str] = (
-            None  # "full" or "subset", locked on first variable call
+            None  # "full" or "pool", locked on first variable call
         )
 
     @staticmethod
@@ -193,7 +193,7 @@ class ResearchHandler:
         """Load from a path or take a frame as given, then run `handler` over it.
 
         Returns an EMPTY frame rather than raising when the source or format is
-        unusable, and prints why. Callers check `len(handler.data)`.
+        unusable, and prints why. Callers check `len(pond.data)`.
 
         `data_format` is one of the `_LOADER_REG` keys and is inferred from the
         file extension when omitted.
@@ -202,7 +202,7 @@ class ResearchHandler:
         fail silently and accounted for 26 failing tests:
 
         - a `str` path was rejected outright, because only `Path` was accepted,
-          while the class docstring documented `ResearchHandler("data.csv")`.
+          while the class docstring documented `Pond("data.csv")`.
         - the path branch computed its result and then FELL THROUGH to the
           DataFrame check below. A path is not a DataFrame, so it landed in the
           else, printed "Invalid source type", and overwrote the loaded data
@@ -215,7 +215,7 @@ class ResearchHandler:
 
         if isinstance(source, Path):
             # Infer from the extension when not told, so the documented
-            # `ResearchHandler("data.csv")` works with no data_format.
+            # `Pond("data.csv")` works with no data_format.
             fmt = data_format or source.suffix.lstrip(".").lower()
             if fmt not in _LOADER_REG:
                 print(
@@ -254,54 +254,54 @@ class ResearchHandler:
 
     def _raise_if_load_failed(self) -> None:
         if self._load_failed:
-            raise ResearchHandlerLoadFailedError(
-                f"Cannot operate on ResearchHandler because loading source "
+            raise PondLoadFailedError(
+                f"Cannot operate on Pond because loading source "
                 f"'{self._failed_source}' failed."
             )
 
-    def create_subset(self, condition: Callable) -> None:
+    def create_pool(self, condition: Callable) -> None:
         """
         Example Usage:
 
-            handler.create_subset(lambda df: df["age"] > 30)
-            handler.create_subset(lambda df: df["country"].isin(["US", "UK"]))
+            pond.create_pool(lambda df: df["age"] > 30)
+            pond.create_pool(lambda df: df["country"].isin(["US", "UK"]))
         """
         self._raise_if_load_failed()
         if self.data is not None:
-            self.subset = self.data[condition(self.data)].copy()
+            self.pool = self.data[condition(self.data)].copy()
         else:
             print("No full dataset available")
             return
-        print(f"Subset created with {len(self.subset)} rows")
+        print(f"Pool created with {len(self.pool)} rows")
 
     def _enforce_source_mode(self, full: bool) -> None:
         """
         Lock the source mode on the first variable-setting call.
         Raises ValueError if a subsequent call uses a different mode.
         """
-        mode = "full" if full else "subset"
+        mode = "full" if full else "pool"
         if self._source_mode is None:
             self._source_mode = mode
         elif self._source_mode != mode:
             raise ValueError(
                 f"Source mode conflict: variables are being set from '{self._source_mode}' "
-                f"but this call uses '{'full' if full else 'subset'}'. "
-                f"Call clear_caches() before switching between full and subset."
+                f"but this call uses '{'full' if full else 'pool'}'. "
+                f"Call clear_caches() before switching between full and pool."
             )
 
     def set_dependent(self, col: str, full: bool = True) -> None:
         """
         Example Usage:
 
-            handler.set_dependent("income")
-            handler.set_dependent("income", full=False)
+            pond.set_dependent("income")
+            pond.set_dependent("income", full=False)
         """
         self._raise_if_load_failed()
         self._enforce_source_mode(full)
         if full and self.data is not None:
             self.dependent = self.data[col]
-        elif not full and self.subset is not None:
-            self.dependent = self.subset[col]
+        elif not full and self.pool is not None:
+            self.dependent = self.pool[col]
         else:
             print("No valid dataset available")
             return
@@ -311,15 +311,15 @@ class ResearchHandler:
         """
         Example Usage:
 
-            handler.add_independents("age", "education", "experience")
-            handler.add_independents("age", "education", full=False)
+            pond.add_independents("age", "education", "experience")
+            pond.add_independents("age", "education", full=False)
         """
         self._raise_if_load_failed()
         self._enforce_source_mode(full)
         if full and self.data is not None:
             df = self.data
-        elif not full and self.subset is not None:
-            df = self.subset
+        elif not full and self.pool is not None:
+            df = self.pool
         else:
             print("No valid dataset available")
             return
@@ -331,15 +331,15 @@ class ResearchHandler:
         """
         Example Usage:
 
-            handler.add_controls("gender", "region")
-            handler.add_controls("gender", "region", full=False)
+            pond.add_controls("gender", "region")
+            pond.add_controls("gender", "region", full=False)
         """
         self._raise_if_load_failed()
         self._enforce_source_mode(full)
         if full and self.data is not None:
             df = self.data
-        elif not full and self.subset is not None:
-            df = self.subset
+        elif not full and self.pool is not None:
+            df = self.pool
         else:
             print("No valid dataset available")
             return
@@ -370,13 +370,13 @@ class ResearchHandler:
         """
         Example Usage:
 
-            handler.attach("log_income", np.log(handler.data["income"]))
-            handler.attach("log_income", some_series, to_full=False)
+            pond.attach("log_income", np.log(pond.data["income"]))
+            pond.attach("log_income", some_series, to_full=False)
         """
         if to_full and self.data is not None:
             self.data[col_name] = series
-        elif not to_full and self.subset is not None:
-            self.subset[col_name] = series.loc[self.subset.index]
+        elif not to_full and self.pool is not None:
+            self.pool[col_name] = series.loc[self.pool.index]
         else:
             print("No valid dataset available")
             return
@@ -394,15 +394,15 @@ class ResearchHandler:
         Pulls 1 column and attaches based on a normalizing Callable
         Example Usage:
 
-            handler.normalize_and_attach("income", np.log, "log_income")
-            handler.normalize_and_attach("score", lambda s: (s - s.mean()) / s.std(), "z_score", full=False)
+            pond.normalize_and_attach("income", np.log, "log_income")
+            pond.normalize_and_attach("score", lambda s: (s - s.mean()) / s.std(), "z_score", full=False)
         """
         self._raise_if_load_failed()
         if full and self.data is not None:
             result = normalizing_function(self.data[source_col])
             self.attach(col_name=new_colname, series=result, to_full=True, quiet=True)
-        elif not full and self.subset is not None:
-            result = normalizing_function(self.subset[source_col])
+        elif not full and self.pool is not None:
+            result = normalizing_function(self.pool[source_col])
             self.attach(col_name=new_colname, series=result, to_full=False, quiet=True)
         else:
             print("No valid dataset available")
@@ -422,16 +422,16 @@ class ResearchHandler:
         Pulls 2 or more columns for calculation, and attaches to dataset
 
 
-            handler.calculate_and_attach(["price", "quantity"], lambda df: df["price"] * df["quantity"], "revenue")
-            handler.calculate_and_attach(["math", "reading"], lambda df: df.mean(axis=1), "avg_score", full=False)
+            pond.calculate_and_attach(["price", "quantity"], lambda df: df["price"] * df["quantity"], "revenue")
+            pond.calculate_and_attach(["math", "reading"], lambda df: df.mean(axis=1), "avg_score", full=False)
         little weird
         """
         self._raise_if_load_failed()
         if full and self.data is not None:
             result = func(self.data[source_cols])
             self.attach(col_name=new_colname, series=result, to_full=True, quiet=True)
-        elif not full and self.subset is not None:
-            result = func(self.subset[source_cols])
+        elif not full and self.pool is not None:
+            result = func(self.pool[source_cols])
             self.attach(col_name=new_colname, series=result, to_full=False, quiet=True)
         else:
             print("No valid dataset available")
@@ -450,11 +450,11 @@ class ResearchHandler:
             RuntimeError: if no independents have been set
 
         Example:
-            rh.set_dependent("log_income")
-            rh.add_independents("education", "experience")
-            rh.add_controls("female")
+            pond.set_dependent("log_income")
+            pond.add_independents("education", "experience")
+            pond.add_controls("female")
 
-            spec = rh.get_spec()
+            spec = pond.get_spec()
             spec.X              # DataFrame
             spec.y              # Series
             spec.independents   # ("education", "experience")
@@ -466,8 +466,8 @@ class ResearchHandler:
         y = self.get_y()
 
         # determine source dataframe
-        if self._source_mode == "subset":
-            source_df = self.subset
+        if self._source_mode == "pool":
+            source_df = self.pool
         else:
             source_df = self.data
 
@@ -482,9 +482,9 @@ class ResearchHandler:
             data=pd.DataFrame(source_df).copy(),
         )
 
-    def reset_subset(self) -> None:
-        self.subset = None
-        print("Subset cleared")
+    def reset_pool(self) -> None:
+        self.pool = None
+        print("Pool cleared")
 
     def clear_caches(self) -> None:
         self.dependent = None
