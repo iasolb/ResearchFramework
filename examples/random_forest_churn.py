@@ -16,7 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
-from research_framework import ResearchHandler, log1p_transform, safe_ratio, z_score
+from otter import ResearchHandler, log1p_transform, safe_ratio, z_score
 
 
 # ---------------------------------------------------------------------------

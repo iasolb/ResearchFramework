@@ -23,8 +23,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from research_framework.rh import ModelSpec
-from research_framework.simulation import (
+from otter.rh import ModelSpec
+from otter.simulation import (
     _DISTRIBUTION_REGISTRY,
     ConvergenceDiagnostics,
     DistributionSpec,

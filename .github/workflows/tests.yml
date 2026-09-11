@@ -5,6 +5,9 @@ on:
   # in this repo triggers BOTH events and every job runs twice.
   push:
     branches: [main]
+    # Tags drive releases. The publish job below is gated on this ref, and the
+    # tag also re-runs the tests, so nothing reaches PyPI untested.
+    tags: ["v*"]
   pull_request:
 
 jobs:
@@ -20,3 +23,34 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e ".[dev]"
       - run: pytest
+
+  # PUBLISH LIVES IN THIS FILE ON PURPOSE, and moving it breaks releasing.
+  # The PyPI trusted publisher for `otter` is registered against
+  # iasolb/otter with workflow `tests.yml`. PyPI matches the workflow
+  # FILENAME in the OIDC claim, so a publish job in any other file is
+  # rejected no matter how correct it looks. If this ever moves, the
+  # publisher entry on PyPI has to be re-registered to match.
+  publish:
+    needs: test
+    # Only a version tag publishes. On a plain push to main this is skipped,
+    # which is what stops a re-run trying to upload a version that already
+    # exists on PyPI (that is a hard error, not a no-op).
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for trusted publishing: this is what mints the OIDC token
+      # PyPI exchanges for an upload token. No API token or password exists
+      # anywhere in this repo, which is the whole point of the mechanism.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: python -m build
+      # Fails loudly on a malformed sdist/wheel BEFORE contacting PyPI, so a
+      # bad build is a build error rather than a half-finished upload.
+      - run: python -m pip install twine
+      - run: python -m twine check dist/*
+      - uses: pypa/gh-action-pypi-publish@release/v1

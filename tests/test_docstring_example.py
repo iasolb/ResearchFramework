@@ -10,7 +10,7 @@ Offline: no network in any of these paths.
 import numpy as np
 import pandas as pd
 
-from research_framework.simulation import (
+from otter.simulation import (
     ConvergenceDiagnostics,
     DistributionSpec,
     Scenario,

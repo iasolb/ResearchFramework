@@ -1,6 +1,6 @@
 """Make the test suite test THIS checkout, not whatever is pip-installed.
 
-This is a src-layout package, so `import research_framework` normally resolves
+This is a src-layout package, so `import otter` normally resolves
 to the installed distribution. If an editable install points somewhere else (a
 second clone, a scratch directory), the suite silently tests that other tree
 and a green run says nothing about the code you are looking at. That was the

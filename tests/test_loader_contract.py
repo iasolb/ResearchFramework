@@ -24,7 +24,7 @@ import pickle
 import pandas as pd
 import pytest
 
-from research_framework.rh import (
+from otter.rh import (
     ResearchHandler,
     ResearchHandlerLoadFailedError,
     csv_loader,

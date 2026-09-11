@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from research_framework import ResearchHandler
-from research_framework.transforms import (
+from otter import ResearchHandler
+from otter.transforms import (
     mean_center,
     z_score,
     min_max_scale,

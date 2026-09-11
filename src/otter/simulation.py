@@ -682,7 +682,7 @@ class Simulation:
     Wires up the input manager, engine, sensitivity analyser and convergence
     diagnostics so you do not have to::
 
-        from research_framework.simulation import DistributionSpec, Simulation
+        from otter.simulation import DistributionSpec, Simulation
 
         sim = Simulation(
             variables=[

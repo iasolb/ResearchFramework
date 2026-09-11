@@ -1,8 +1,8 @@
 """
-Plotter Module — ResearchFramework Visualization Layer
+Plotter Module — otter Visualization Layer
 =======================================================
 
-External visualization module for the ResearchFramework. Decoupled from
+External visualization module for otter. Decoupled from
 the core simulation engine so that simulation.py has zero viz dependencies.
 
 Classes:
